@@ -2,13 +2,17 @@ from PySide6.QtWidgets import (
     QWidget, QTextEdit, QLineEdit, QPushButton,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint
 
 
 class ChatPanel(QWidget):
     def __init__(self, bubble=None):
         super().__init__()
         self.bubble = bubble
+
+        # These are for dragging the panel around
+        self.drag_position = QPoint()
+        self.is_dragging = False
 
         self.setup_window()
         self.create_widgets()
@@ -177,3 +181,20 @@ class ChatPanel(QWidget):
         self.chat_box.append("ChatGPT:\nPlaceholder response for now.\n")
 
         self.input_box.clear()
+
+    # Mouse event handlers for dragging the top bar of the chat panel
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and event.position().y() < 60:
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self.is_dragging = True
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.LeftButton and self.is_dragging:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = False
+            event.accept()
