@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel, QFrame)
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWebEngineWidgets import QWebEngineView
-
+from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+import os
 
 class ChatPanel(QWidget):
     def __init__(self, bubble=None):
@@ -87,7 +88,23 @@ class ChatPanel(QWidget):
         self.close_button.setFixedSize(50, 50)
         self.close_button.clicked.connect(self.close_panel)
 
+        # Persistent logins stored in a local folder
         self.browser = QWebEngineView()
+        
+        self.profile = QWebEngineProfile("llm_profile", self.browser)
+        self.profile = QWebEngineProfile("llm_profile", self.browser)
+        self.profile.setHttpUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        storage_path = os.path.join(project_root, "session_data")
+        
+        self.profile.setPersistentStoragePath(storage_path)
+        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
+        
+        self.page = QWebEnginePage(self.profile, self.browser)
+        self.browser.setPage(self.page)
+        
         self.browser.setUrl(QUrl("https://chatgpt.com"))
 
     def create_layout(self):

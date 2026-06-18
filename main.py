@@ -3,7 +3,6 @@ from PySide6.QtWidgets import QApplication
 
 from app.widget import FloatingWidget
 
-
 # This starts the entire app
 app = QApplication(sys.argv)
 

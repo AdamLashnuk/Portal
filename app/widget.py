@@ -49,16 +49,27 @@ class FloatingWidget(QWidget):
         bubble_x = self.x()
         bubble_y = self.y()
 
-        # Target coordinates
+        # Initial target coordinates
         target_x = bubble_x - 350
         target_y = bubble_y - 450 
 
-        if target_y < 10:
-            target_y = bubble_y + self.height() + 10
+        # Get the dimensions of the monitor the widget is currently on
+        screen = self.screen().availableGeometry()
+        panel_w = self.chat_panel.width()
+        panel_h = self.chat_panel.height()
+        
+        # Prevent it from clipping past the edges of the screen and make the chat panel open flushly against the edges of the screen
+        if target_y < screen.top():
+            target_y = screen.top()
+            
+        if target_y + panel_h > screen.bottom():
+            target_y = screen.bottom() - panel_h
 
-        # Also prevent it from clipping past the left side of the screen
-        if target_x < 10:
-            target_x = 10
+        if target_x < screen.left():
+            target_x = screen.left()
+
+        if target_x + panel_w > screen.right():
+            target_x = screen.right() - panel_w
 
         # Move and display the panel safely
         self.chat_panel.move(target_x, target_y)
