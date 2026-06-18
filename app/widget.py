@@ -37,17 +37,30 @@ class FloatingWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Draw the background circle (Matches #202123)
-        painter.setBrush(QColor("#202123"))
-        # Draw the border (Matches 2px #10a37f)
-        painter.setPen(QPen(QColor("#10a37f"), 2))
-        painter.drawEllipse(2, 2, 56, 56)
+    def paintEvent(self, event):
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
 
-        # Draw the "AI" text
-        painter.setPen(QColor("white"))
-        font = QFont("Arial", 15, QFont.Bold)
-        painter.setFont(font)
-        painter.drawText(self.rect(), Qt.AlignCenter, "AI")
+            # Draw the background circle (Matches #202123)
+            painter.setBrush(QColor("#202123"))
+            painter.setPen(Qt.NoPen)  # This removes the green outline
+            painter.drawEllipse(2, 2, 56, 56)
+
+            logo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "logo.png")
+            logo = QPixmap(logo_path)
+
+            # 3. Create a circular path
+            circular_path = QPainterPath()
+            circular_path.addEllipse(QRect(2, 2, 56, 56))
+
+            # 4. Enable clipping to the circle
+            painter.setClipPath(circular_path)
+
+            # 5. Draw the logo (now it will be clipped to circle)
+            if not logo.isNull():
+                scaled_logo = logo.scaled(56, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                painter.drawPixmap(2, 2, scaled_logo)
+
 
     def open_chat(self):
         bubble_x = self.x()
