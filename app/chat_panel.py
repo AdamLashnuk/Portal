@@ -44,11 +44,12 @@ class ChatPanel(QWidget):
 
     def setup_window(self):
         self.setMinimumSize(400, 400) # Prevents the window from crashing if made too small
-        
+
         # Initialize QSettings and load the saved size
         self.settings = QSettings("MyLLMWidget", "ChatPanel")
+        self.current_provider = self.settings.value("current_provider", "chatgpt")
         saved_size = self.settings.value("window_size")
-        
+
         if saved_size:
             self.resize(saved_size)
         else:
@@ -192,8 +193,15 @@ class ChatPanel(QWidget):
         
         self.page = QWebEnginePage(self.profile, self.browser)
         self.browser.setPage(self.page)
-        
-        self.browser.setUrl(QUrl("https://chatgpt.com"))
+
+        if self.current_provider == "chatgpt":
+            self.browser.setUrl(QUrl("https://chatgpt.com"))
+        elif self.current_provider == "claude":
+            self.browser.setUrl(QUrl("https://claude.ai"))
+        elif self.current_provider == "gemini":
+            self.browser.setUrl(QUrl("https://gemini.google.com"))
+        else:
+            self.browser.setUrl(QUrl("https://chatgpt.com"))
 
     def create_layout(self):
         top_bar = QHBoxLayout()
@@ -247,12 +255,21 @@ class ChatPanel(QWidget):
         self.browser.show()
 
     def open_chatgpt(self):
+        self.current_provider = "chatgpt"
+        self.settings.setValue("current_provider", self.current_provider)
+        self.show_browser()
         self.browser.setUrl(QUrl("https://chatgpt.com"))
 
     def open_claude(self):
+        self.current_provider = "claude"
+        self.settings.setValue("current_provider", self.current_provider)
+        self.show_browser()
         self.browser.setUrl(QUrl("https://claude.ai"))
 
     def open_gemini(self):
+        self.current_provider = "gemini"
+        self.settings.setValue("current_provider", self.current_provider)
+        self.show_browser()
         self.browser.setUrl(QUrl("https://gemini.google.com"))
 
     def close_panel(self):
