@@ -147,6 +147,20 @@ class ChatPanel(QWidget):
         # 2. THIS MUST COME LAST: It puts the widgets into the layout
         self.create_layout()
 
+    def save_setting(self, key, value):
+        # QSettings normally only guarantees a write hits disk when the
+        # object is cleanly destroyed or sync() is called explicitly — Qt
+        # does NOT promise an immediate flush on setValue() alone. This app
+        # has no quit handler (closing the chat panel just hides it; the
+        # bubble keeps the process alive), so the only way these settings
+        # are likely to ever get a clean shutdown is if the OS itself
+        # terminates the process — and that can happen before the normal
+        # flush gets a chance to run. Calling sync() right after every
+        # write makes sure "Set as Default" (and everything else) actually
+        # survives the app being closed abruptly, not just a clean exit.
+        self.settings.setValue(key, value)
+        self.settings.sync()
+
     def setup_window(self):
         self.setMinimumSize(400, 400) # Prevents the window from crashing if made too small
         
@@ -175,7 +189,7 @@ class ChatPanel(QWidget):
                     llm["id"] = str(uuid.uuid4())
                     migrated = True
             if migrated:
-                self.settings.setValue("active_llms", json.dumps(self.active_llms))
+                self.save_setting("active_llms", json.dumps(self.active_llms))
         else:
             self.active_llms = [
                 {"id": str(uuid.uuid4()), "name": "ChatGPT", "url": "https://chatgpt.com"},
@@ -492,9 +506,9 @@ class ChatPanel(QWidget):
         # for settings saved before current_provider_id existed).
         if llm_id == self.current_provider_id:
             self.current_provider = new_name
-            self.settings.setValue("current_provider", self.current_provider)
+            self.save_setting("current_provider", self.current_provider)
 
-        self.settings.setValue("active_llms", json.dumps(self.active_llms))
+        self.save_setting("active_llms", json.dumps(self.active_llms))
         self.render_active_llms()
 
     def duplicate_llm_entry(self, llm_id):
@@ -512,7 +526,7 @@ class ChatPanel(QWidget):
         # so the duplicate is easy to find.
         self.active_llms.insert(index + 1, copy_entry)
 
-        self.settings.setValue("active_llms", json.dumps(self.active_llms))
+        self.save_setting("active_llms", json.dumps(self.active_llms))
         self.render_active_llms()
 
     def set_default_llm_entry(self, llm_id):
@@ -523,8 +537,8 @@ class ChatPanel(QWidget):
         entry = self.active_llms[index]
         self.current_provider = entry["name"]
         self.current_provider_id = entry["id"]
-        self.settings.setValue("current_provider", self.current_provider)
-        self.settings.setValue("current_provider_id", self.current_provider_id)
+        self.save_setting("current_provider", self.current_provider)
+        self.save_setting("current_provider_id", self.current_provider_id)
 
         # Re-render so the "Set as Default ✓" disabled state in the context
         # menu reflects the new default immediately on next right-click.
@@ -549,10 +563,10 @@ class ChatPanel(QWidget):
             else:
                 self.current_provider = "ChatGPT"
                 self.current_provider_id = None
-            self.settings.setValue("current_provider", self.current_provider)
-            self.settings.setValue("current_provider_id", self.current_provider_id)
+            self.save_setting("current_provider", self.current_provider)
+            self.save_setting("current_provider_id", self.current_provider_id)
 
-        self.settings.setValue("active_llms", json.dumps(self.active_llms))
+        self.save_setting("active_llms", json.dumps(self.active_llms))
         self.render_active_llms()
 
         # If the LLM being viewed right now was the one just deleted, swap
@@ -577,7 +591,7 @@ class ChatPanel(QWidget):
             return
         
         self.active_llms.append({"id": str(uuid.uuid4()), "name": name, "url": url})
-        self.settings.setValue("active_llms", json.dumps(self.active_llms))
+        self.save_setting("active_llms", json.dumps(self.active_llms))
         self.render_active_llms()
 
     def create_layout(self):
@@ -629,10 +643,11 @@ class ChatPanel(QWidget):
         self.content_stack.setCurrentWidget(self.browser)
 
     def open_llm_url(self, name, url, llm_id=None):
-        self.current_provider = name
-        self.current_provider_id = llm_id
-        self.settings.setValue("current_provider", self.current_provider)
-        self.settings.setValue("current_provider_id", self.current_provider_id)
+        # Clicking an LLM just loads it into the browser for this session —
+        # it no longer touches current_provider/current_provider_id. Those
+        # are only changed by the explicit "Set as Default" action in the
+        # right-click menu now, so opening ChatGPT to check something
+        # doesn't silently change what launches next time the app starts.
         self.show_browser()
         self.browser.setUrl(QUrl(url))
 
@@ -645,11 +660,11 @@ class ChatPanel(QWidget):
 
     def update_content_area_color(self, new_color):
         self.container.setStyleSheet(f"QFrame#mainContainer {{ background-color: {new_color}; border: 1px solid rgba(255, 255, 255, 20); border-radius: 24px; }}")
-        self.settings.setValue("resize_color", new_color)
+        self.save_setting("resize_color", new_color)
 
     def hideEvent(self, event):
         # Automatically save the current size to QSettings whenever the panel disappears.
-        self.settings.setValue("window_size", self.size())
+        self.save_setting("window_size", self.size())
         super().hideEvent(event)
 
     def open_settings(self):
