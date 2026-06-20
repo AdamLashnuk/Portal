@@ -276,6 +276,8 @@ class ChatPanel(QWidget):
         self.browser.setUrl(QUrl("https://gemini.google.com"))
 
     def close_panel(self):
+        self.reset_to_browser()
+
         if self.bubble:
             self.bubble.close_chat_with_animation()
         else:
@@ -451,3 +453,7 @@ class ChatPanel(QWidget):
 
         self.setCursor(QCursor(Qt.ArrowCursor))
         event.accept()
+
+    def reset_to_browser(self):
+        self.setting_panel.hide()
+        self.browser.show()

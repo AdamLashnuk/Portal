@@ -140,7 +140,7 @@ class FloatingWidget(QWidget):
 
     def show_chat_panel_after_animation(self):
         self.chat_panel.move(self.final_chat_x, self.final_chat_y)
-        self.chat_panel.browser.show()
+        self.chat_panel.reset_to_browser()
         self.chat_panel.show()
         self.chat_panel.raise_()
 
