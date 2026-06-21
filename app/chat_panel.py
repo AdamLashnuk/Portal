@@ -622,7 +622,7 @@ class ChatPanel(QWidget):
         collapse_group = QParallelAnimationGroup(self)
         collapse_group.addAnimation(collapse_min)
         collapse_group.addAnimation(collapse_max)
-
+#
         def finish_pop():
             shrink_group.start()
             particle_group.start()
