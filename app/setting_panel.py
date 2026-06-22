@@ -274,17 +274,17 @@ class SettingPanel(QWidget):
 
         icon_label = QLabel()
         icon_path = os.path.join(project_root, "assets", "portalbig.png")
-        image = QImage(icon_path)
-        if not image.isNull():
-            image = image.convertToFormat(QImage.Format_ARGB32)
-            for y in range(image.height()):
-                for x in range(image.width()):
-                    color = image.pixelColor(x, y)
-                    if color.red() > 240 and color.green() > 240 and color.blue() > 240:
-                        color.setAlpha(0)
-                        image.setPixelColor(x, y, color)
-            pixmap = QPixmap.fromImage(image)
-            icon_label.setPixmap(pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        
+        if os.path.exists(icon_path):
+            logo_pixmap = QPixmap(icon_path)
+            
+            if not logo_pixmap.isNull():
+                target_bg_color = QColor(245, 245, 245)
+                
+                mask = logo_pixmap.createMaskFromColor(target_bg_color, Qt.MaskInColor)
+                logo_pixmap.setMask(mask)
+                
+                icon_label.setPixmap(logo_pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         title = QLabel("Settings")
         title.setObjectName("sidebarTitle")
