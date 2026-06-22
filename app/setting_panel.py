@@ -1,7 +1,8 @@
 import os
 import json
 import copy
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget, QButtonGroup, QKeySequenceEdit, QSlider)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget,
+                               QButtonGroup, QKeySequenceEdit, QSlider)
 from PySide6.QtCore import Qt, Signal, QSettings
 from PySide6.QtGui import QPixmap, QColor, QImage, QKeySequence, QPainter, QBrush
 
@@ -13,6 +14,7 @@ DEFAULT_KEYBINDS = {
     "quick_refresh": {"label": "Quick Refresh", "key": "Ctrl+R", "is_global": False},
     "pin_toggle": {"label": "Toggle Pin", "key": "Alt+P", "is_global": True}
 }
+
 
 class CustomSlider(QWidget):
     valueChanged = Signal(int)
@@ -27,10 +29,15 @@ class CustomSlider(QWidget):
         self.setAttribute(Qt.WA_Hover)
         self._is_hovered = False
 
-    def setMinimum(self, min_val): self._min = min_val
-    def setMaximum(self, max_val): self._max = max_val
-    def value(self): return self._value
-    
+    def setMinimum(self, min_val):
+        self._min = min_val
+
+    def setMaximum(self, max_val):
+        self._max = max_val
+
+    def value(self):
+        return self._value
+
     def setValue(self, val):
         self._value = max(self._min, min(self._max, val))
         self.update()
@@ -62,7 +69,7 @@ class CustomSlider(QWidget):
             handle_color = QColor("#555555")
 
         painter.setPen(Qt.NoPen)
-        
+
         # Draw Background Track
         painter.setBrush(QBrush(track_color))
         painter.drawRoundedRect(0, track_y, w, track_h, 3, 3)
@@ -95,15 +102,17 @@ class CustomSlider(QWidget):
             self.valueChanged.emit(self._value)
             self.update()
 
+
 class SettingPanel(QWidget):
     color_changed = Signal(str)
     opacity_changed = Signal(int)
+    widget_position_changed = Signal(str)
     clear_data_requested = Signal()
-    keybinds_updated = Signal(dict) # Tells ChatPanel to reload its shortcuts
+    keybinds_updated = Signal(dict)  # Tells ChatPanel to reload its shortcuts
 
     def __init__(self):
         super().__init__()
-        
+
         # Load saved keybinds from disk, or use defaults
         self.settings = QSettings("MyLLMWidget", "Keybinds")
         saved_binds = self.settings.value("shortcuts")
@@ -115,8 +124,8 @@ class SettingPanel(QWidget):
                     self.current_keybinds[k] = v
         else:
             self.current_keybinds = copy.deepcopy(DEFAULT_KEYBINDS)
-            
-        self.keybind_widgets = {} # Stores references to the UI inputs
+
+        self.keybind_widgets = {}  # Stores references to the UI inputs
 
         self.setStyleSheet("""
             /* Global widget rules */
@@ -137,11 +146,11 @@ class SettingPanel(QWidget):
             QFrame.settingCard { background-color: #242424; border: 1px solid #333333; border-radius: 10px; }
             QLabel.cardTitle { font-size: 16px; font-weight: 500; color: #ffffff; }
             QLabel.cardText { font-size: 14px; color: #b4b4b4; }
-            
+
             /* --- Danger Button Styling --- */
             QPushButton.dangerButton { background-color: rgba(220, 38, 38, 0.15); border: 1px solid rgba(220, 38, 38, 0.5); color: #f87171; border-radius: 8px; padding: 10px 20px; font-weight: 600; font-size: 14px; }
             QPushButton.dangerButton:hover { background-color: rgba(220, 38, 38, 0.25); color: #fca5a5; }
-            
+
             /* --- Keybinds UI Styling --- */
             QKeySequenceEdit { background-color: #151515; border: 1px solid #333333; border-radius: 6px; color: #ffffff; padding: 6px 10px; }
             QPushButton.scopeToggle { background-color: #242424; color: #b4b4b4; border: 1px solid #333333; border-radius: 6px; padding: 6px 0px; font-size: 13px; }
@@ -211,6 +220,13 @@ class SettingPanel(QWidget):
         app_settings.setValue("resize_opacity", self.current_opacity)
         app_settings.sync()
 
+    def _on_widget_position_selected(self, mode):
+        self.current_widget_position = mode
+        app_settings = QSettings("MyLLMWidget", "ChatPanel")
+        app_settings.setValue("widget_position_mode", mode)
+        app_settings.sync()
+        self.widget_position_changed.emit(mode)
+
     def update_keybind_seq(self, action_id, seq_str):
         self.current_keybinds[action_id]["key"] = seq_str
         self.save_all_keybinds()
@@ -227,12 +243,12 @@ class SettingPanel(QWidget):
                 w = self.keybind_widgets[action_id]
                 w["edit"].blockSignals(True)
                 w["toggle"].blockSignals(True)
-                
+
                 w["edit"].setKeySequence(QKeySequence(data["key"]))
                 w["toggle"].setChecked(data["is_global"])
                 w["toggle"].setText("Global" if data["is_global"] else "Local")
                 w["label"].setText(data["label"])  # <-- THIS NEW LINE UPDATES THE TEXT
-                
+
                 w["edit"].blockSignals(False)
                 w["toggle"].blockSignals(False)
         self.save_all_keybinds()
@@ -302,13 +318,13 @@ class SettingPanel(QWidget):
 
         # ---------------- RIGHT CONTENT AREA ----------------
         self.content_stack = QStackedWidget()
-        
+
         # === PAGE 0: APPEARANCE ===
         self.appearance_page = QWidget()
         app_layout = QVBoxLayout(self.appearance_page)
         app_layout.setContentsMargins(40, 40, 40, 40)
         app_layout.setAlignment(Qt.AlignTop)
-        
+
         app_title = QLabel("Appearance")
         app_title.setProperty("class", "pageTitle")
         app_layout.addWidget(app_title)
@@ -317,8 +333,8 @@ class SettingPanel(QWidget):
         color_card.setProperty("class", "settingCard")
         color_card_layout = QVBoxLayout(color_card)
         color_card_layout.setContentsMargins(20, 20, 20, 20)
-        color_card_layout.setSpacing(15) 
-        
+        color_card_layout.setSpacing(15)
+
         resize_title = QLabel("Window Color")
         resize_title.setProperty("class", "cardTitle")
         color_card_layout.addWidget(resize_title)
@@ -339,23 +355,27 @@ class SettingPanel(QWidget):
         # alpha value to apply to.
         self.btn_transparent = QPushButton("✕")
         self.btn_transparent.setFixedSize(40, 40)
-        self.btn_transparent.setCheckable(True) 
-        self.btn_transparent.setStyleSheet("QPushButton { background-color: transparent; border: 2px dashed #444444; border-radius: 8px; color: #555555; font-weight: bold; } QPushButton:hover { border: 2px dashed #b4b4b4; color: #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; color: #6366f1; } ")
+        self.btn_transparent.setCheckable(True)
+        self.btn_transparent.setStyleSheet(
+            "QPushButton { background-color: transparent; border: 2px dashed #444444; border-radius: 8px; color: #555555; font-weight: bold; } QPushButton:hover { border: 2px dashed #b4b4b4; color: #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; color: #6366f1; } ")
 
         self.btn_grey = QPushButton()
         self.btn_grey.setFixedSize(40, 40)
         self.btn_grey.setCheckable(True)
-        self.btn_grey.setStyleSheet("QPushButton { background-color: rgb(15, 15, 15); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
+        self.btn_grey.setStyleSheet(
+            "QPushButton { background-color: rgb(15, 15, 15); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
 
         self.btn_purple = QPushButton()
         self.btn_purple.setFixedSize(40, 40)
         self.btn_purple.setCheckable(True)
-        self.btn_purple.setStyleSheet("QPushButton { background-color: rgb(45, 25, 65); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
+        self.btn_purple.setStyleSheet(
+            "QPushButton { background-color: rgb(45, 25, 65); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
 
         self.btn_blue = QPushButton()
         self.btn_blue.setFixedSize(40, 40)
         self.btn_blue.setCheckable(True)
-        self.btn_blue.setStyleSheet("QPushButton { background-color: rgb(15, 30, 50); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
+        self.btn_blue.setStyleSheet(
+            "QPushButton { background-color: rgb(15, 30, 50); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
 
         self.color_group.addButton(self.btn_transparent)
         self.color_group.addButton(self.btn_grey)
@@ -392,10 +412,14 @@ class SettingPanel(QWidget):
         self.selected_base_color = saved_base_color
         self.current_opacity = int(saved_opacity)
 
-        if saved_base_color == "transparent": self.btn_transparent.setChecked(True)
-        elif saved_base_color == "rgb(45, 25, 65)": self.btn_purple.setChecked(True)
-        elif saved_base_color == "rgb(15, 30, 50)": self.btn_blue.setChecked(True)
-        else: self.btn_grey.setChecked(True)
+        if saved_base_color == "transparent":
+            self.btn_transparent.setChecked(True)
+        elif saved_base_color == "rgb(45, 25, 65)":
+            self.btn_purple.setChecked(True)
+        elif saved_base_color == "rgb(15, 30, 50)":
+            self.btn_blue.setChecked(True)
+        else:
+            self.btn_grey.setChecked(True)
 
         color_card_layout.addLayout(color_layout)
         app_layout.addWidget(color_card)
@@ -431,6 +455,63 @@ class SettingPanel(QWidget):
 
         app_layout.addWidget(opacity_card)
 
+        # --- Widget position card ---
+        position_card = QFrame()
+        position_card.setProperty("class", "settingCard")
+        position_card_layout = QVBoxLayout(position_card)
+        position_card_layout.setContentsMargins(20, 20, 20, 20)
+        position_card_layout.setSpacing(12)
+
+        position_title = QLabel("Widget Position")
+        position_title.setProperty("class", "cardTitle")
+        position_card_layout.addWidget(position_title)
+
+        position_desc = QLabel("Choose Free Roam to drag the bubble anywhere, or lock it to one corner of your screen.")
+        position_desc.setProperty("class", "cardText")
+        position_desc.setWordWrap(True)
+        position_card_layout.addWidget(position_desc)
+
+        self.position_group = QButtonGroup(self)
+        self.position_group.setExclusive(True)
+
+        position_buttons = QHBoxLayout()
+        position_buttons.setSpacing(8)
+
+        self.btn_pos_free = QPushButton("Free Roam")
+        self.btn_pos_top_left = QPushButton("Top Left")
+        self.btn_pos_top_right = QPushButton("Top Right")
+        self.btn_pos_bottom_left = QPushButton("Bottom Left")
+        self.btn_pos_bottom_right = QPushButton("Bottom Right")
+
+        self.position_modes = {
+            self.btn_pos_free: "free",
+            self.btn_pos_top_left: "top_left",
+            self.btn_pos_top_right: "top_right",
+            self.btn_pos_bottom_left: "bottom_left",
+            self.btn_pos_bottom_right: "bottom_right",
+        }
+
+        for btn in self.position_modes:
+            btn.setProperty("class", "scopeToggle")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
+            self.position_group.addButton(btn)
+            position_buttons.addWidget(btn)
+
+        self.current_widget_position = app_settings.value("widget_position_mode", "free")
+        checked_button = self.btn_pos_free
+        for btn, mode in self.position_modes.items():
+            if mode == self.current_widget_position:
+                checked_button = btn
+                break
+        checked_button.setChecked(True)
+
+        for btn, mode in self.position_modes.items():
+            btn.clicked.connect(lambda checked=False, m=mode: self._on_widget_position_selected(m))
+
+        position_card_layout.addLayout(position_buttons)
+        app_layout.addWidget(position_card)
+
         # Wire up: clicking a preset updates the base color and re-emits
         # the combined rgba string at the current opacity. Dragging the
         # slider updates opacity and re-emits at the current color.
@@ -460,7 +541,8 @@ class SettingPanel(QWidget):
         danger_title.setProperty("class", "cardTitle")
         priv_card_layout.addWidget(danger_title)
 
-        danger_desc = QLabel("This will instantly log you out of all AI providers, clear your active session cookies, and wipe the widget's internal cache. Use this to protect your privacy or if a website is stuck in an endless login loop.")
+        danger_desc = QLabel(
+            "This will instantly log you out of all AI providers, clear your active session cookies, and wipe the widget's internal cache. Use this to protect your privacy or if a website is stuck in an endless login loop.")
         danger_desc.setProperty("class", "cardText")
         danger_desc.setWordWrap(True)
         priv_card_layout.addWidget(danger_desc)
@@ -469,7 +551,7 @@ class SettingPanel(QWidget):
         self.btn_clear_data.setProperty("class", "dangerButton")
         self.btn_clear_data.setCursor(Qt.PointingHandCursor)
         self.btn_clear_data.clicked.connect(lambda: self.clear_data_requested.emit())
-        
+
         btn_layout = QHBoxLayout()
         btn_layout.addWidget(self.btn_clear_data)
         btn_layout.addStretch()
@@ -501,7 +583,7 @@ class SettingPanel(QWidget):
         kb_card = QFrame()
         kb_card.setProperty("class", "settingCard")
         kb_card_layout = QVBoxLayout(kb_card)
-        kb_card_layout.setContentsMargins(20, 20, 20, 20) 
+        kb_card_layout.setContentsMargins(20, 20, 20, 20)
         kb_card_layout.setSpacing(10)
 
         # Function to build rows dynamically based on the saved dictionary
@@ -510,34 +592,35 @@ class SettingPanel(QWidget):
             row_widget.setObjectName("transparentWidget")
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            
+
             lbl = QLabel(data["label"])
             lbl.setProperty("class", "cardTitle")
             row_layout.addWidget(lbl)
             row_layout.addStretch()
-            
+
             toggle = QPushButton("Global" if data["is_global"] else "Local")
             toggle.setProperty("class", "scopeToggle")
             toggle.setCheckable(True)
             toggle.setChecked(data["is_global"])
             toggle.setCursor(Qt.PointingHandCursor)
             toggle.setFixedWidth(65)
-            
+
             key_edit = QKeySequenceEdit(QKeySequence(data["key"]))
-            key_edit.setFixedWidth(180) 
-            
+            key_edit.setFixedWidth(180)
+
             # Connect Signals to Save Logic
-            toggle.toggled.connect(lambda checked, t=toggle, a=action_id: [t.setText("Global" if checked else "Local"), self.update_keybind_scope(a, checked)])
+            toggle.toggled.connect(lambda checked, t=toggle, a=action_id: [t.setText("Global" if checked else "Local"),
+                                                                           self.update_keybind_scope(a, checked)])
             key_edit.keySequenceChanged.connect(lambda seq, a=action_id: self.update_keybind_seq(a, seq.toString()))
 
             row_layout.addWidget(toggle)
             row_layout.addSpacing(10)
             row_layout.addWidget(key_edit)
             kb_card_layout.addWidget(row_widget)
-            
+
             # Store references so the Reset button can edit them later
             self.keybind_widgets[action_id] = {"edit": key_edit, "toggle": toggle, "label": lbl}
-            
+
             if not is_last:
                 divider = QFrame()
                 divider.setFixedHeight(1)
@@ -547,7 +630,7 @@ class SettingPanel(QWidget):
         # Dynamically draw rows based on current data
         keys = list(self.current_keybinds.keys())
         for i, action_id in enumerate(keys):
-            add_keybind_row(action_id, self.current_keybinds[action_id], is_last=(i == len(keys)-1))
+            add_keybind_row(action_id, self.current_keybinds[action_id], is_last=(i == len(keys) - 1))
 
         kb_layout.addWidget(kb_card)
 

@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import QWidget, QSystemTrayIcon, QMenu, QApplication
-from PySide6.QtCore import Qt, QPoint, QRect
-from PySide6.QtGui import QPainter, QColor, QPixmap, QPainterPath, QPen, QAction, QIcon
+from PySide6.QtCore import Qt, QPoint, QRect, QSettings
+from PySide6.QtGui import QPainter, QColor, QPixmap, QPainterPath, QPen, QAction, QIcon, QCursor
 from app.animation_window import AnimationWindow
 from app.chat_panel import ChatPanel
 
@@ -19,6 +19,7 @@ class FloatingWidget(QWidget):
         self.animation_window.close_finished.connect(self.show_bubble_after_animation)
 
         self.setup_window()
+        self.chat_panel.setting_panel.widget_position_changed.connect(self.set_widget_position_mode)
         self.setup_tray_icon()
 
     def setup_window(self):
@@ -34,6 +35,69 @@ class FloatingWidget(QWidget):
         self.setAttribute(Qt.WA_Hover)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
+        self.settings = QSettings("MyLLMWidget", "ChatPanel")
+        self.widget_position_mode = self.settings.value("widget_position_mode", "free")
+        self.apply_widget_position_mode()
+
+    def set_widget_position_mode(self, mode):
+        self.widget_position_mode = mode
+        self.settings.setValue("widget_position_mode", mode)
+        self.settings.sync()
+        self.apply_widget_position_mode()
+
+    def apply_widget_position_mode(self):
+        if getattr(self, "widget_position_mode", "free") == "free":
+            return
+        self.move(self.corner_position_for_mode(self.widget_position_mode))
+
+        if self.chat_panel.isVisible():
+            panel_x, panel_y = self.calculate_chat_position()
+            self.chat_panel.move(panel_x, panel_y)
+
+    def target_screen_geometry(self):
+        """
+        Return the screen the widget/panel is currently on.
+
+        This matters on multi-monitor setups because QApplication.primaryScreen()
+        always returns the primary monitor, even if the bubble is sitting on a
+        secondary monitor. Corner locking should use the monitor the user is
+        actually working on.
+        """
+        if self.chat_panel.isVisible():
+            point = self.chat_panel.frameGeometry().center()
+        else:
+            point = self.frameGeometry().center()
+
+        screen = QApplication.screenAt(point)
+        if screen is None:
+            screen = QApplication.screenAt(QCursor.pos())
+        if screen is None:
+            screen = QApplication.primaryScreen()
+
+        return screen.availableGeometry()
+
+    def corner_position_for_mode(self, mode):
+        margin = 24
+        screen = self.target_screen_geometry()
+
+        # Use left + width instead of QRect.right(). QRect.right() is inclusive,
+        # which can be off by one and gets confusing with negative monitor coords.
+        left = screen.left()
+        top = screen.top()
+        right_x = screen.left() + screen.width() - self.width()
+        bottom_y = screen.top() + screen.height() - self.height()
+
+        if mode == "top_left":
+            return QPoint(left + margin, top + margin)
+        if mode == "top_right":
+            return QPoint(right_x - margin, top + margin)
+        if mode == "bottom_left":
+            return QPoint(left + margin, bottom_y - margin)
+        if mode == "bottom_right":
+            return QPoint(right_x - margin, bottom_y - margin)
+
+        return self.pos()
+
     def setup_tray_icon(self):
         logo_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -47,7 +111,7 @@ class FloatingWidget(QWidget):
 
         # Create the right-click menu
         self.tray_menu = QMenu()
-        
+
         # Style the menu to match the dark theme
         self.tray_menu.setStyleSheet("""
             QMenu {
@@ -124,12 +188,15 @@ class FloatingWidget(QWidget):
         open/closed state it was already in (just relocated) rather than
         triggering the open/close animation.
         """
-        screen = QApplication.primaryScreen().availableGeometry()
+        screen = self.target_screen_geometry()
 
-        # Center the bubble on the primary screen.
-        bubble_x = screen.center().x() - (self.width() // 2)
-        bubble_y = screen.center().y() - (self.height() // 2)
-        self.move(bubble_x, bubble_y)
+        # Center the bubble on the current screen, unless the user locked it to a corner.
+        if self.widget_position_mode == "free":
+            bubble_x = screen.center().x() - (self.width() // 2)
+            bubble_y = screen.center().y() - (self.height() // 2)
+            self.move(bubble_x, bubble_y)
+        else:
+            self.apply_widget_position_mode()
 
         # Recompute the chat panel's usual offset-from-bubble position,
         # now anchored to the bubble's new (on-screen) location, instead
@@ -144,8 +211,8 @@ class FloatingWidget(QWidget):
         # somewhere clickable, clamp once more here directly so the panel
         # is never positioned with a negative/off-screen origin, even on a
         # tiny screen.
-        panel_x = max(screen.left(), min(panel_x, screen.right() - self.chat_panel.width()))
-        panel_y = max(screen.top(), min(panel_y, screen.bottom() - self.chat_panel.height()))
+        panel_x = max(screen.left(), min(panel_x, screen.left() + screen.width() - self.chat_panel.width()))
+        panel_y = max(screen.top(), min(panel_y, screen.top() + screen.height() - self.chat_panel.height()))
 
         self.chat_panel.move(panel_x, panel_y)
 
@@ -171,14 +238,14 @@ class FloatingWidget(QWidget):
             self.chat_panel.move(target_x, target_y)
             self.chat_panel.show()
             self.chat_panel.raise_()
-        
+
         # Force the settings panel to be the visible widget
         self.chat_panel.content_stack.setCurrentWidget(self.chat_panel.setting_panel)
         self.chat_panel.raise_()
         self.chat_panel.activateWindow()
 
     def quit_app(self):
-        self.tray_icon.hide() # Cleanup icon from tray before exit to prevent ghosts
+        self.tray_icon.hide()  # Cleanup icon from tray before exit to prevent ghosts
         QApplication.quit()
 
     def on_tray_icon_activated(self, reason):
@@ -231,26 +298,22 @@ class FloatingWidget(QWidget):
         bubble_x = self.x()
         bubble_y = self.y()
 
-        screen = self.screen().availableGeometry()
+        screen = self.target_screen_geometry()
         panel_w = self.chat_panel.width()
         panel_h = self.chat_panel.height()
 
         target_x = bubble_x - 350
         target_y = bubble_y - 450
 
-        # Prevent it from clipping past the edges of the screen
-        if target_y < screen.top():
-            target_y = screen.top()
+        # Prevent it from clipping past the edges of the same monitor as the bubble.
+        min_x = screen.left()
+        min_y = screen.top()
+        max_x = screen.left() + screen.width() - panel_w
+        max_y = screen.top() + screen.height() - panel_h
 
-        if target_y + panel_h > screen.bottom():
-            target_y = screen.bottom() - panel_h
+        target_x = max(min_x, min(target_x, max_x))
+        target_y = max(min_y, min(target_y, max_y))
 
-        if target_x < screen.left():
-            target_x = screen.left()
-
-        if target_x + panel_w > screen.right():
-            target_x = screen.right() - panel_w
-            
         return target_x, target_y
 
     def open_chat(self):
@@ -283,12 +346,16 @@ class FloatingWidget(QWidget):
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
-            self.was_dragging = True
-            self.move(event.globalPosition().toPoint() - self.drag_position)
+            if self.widget_position_mode == "free":
+                self.was_dragging = True
+                self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
+            if self.widget_position_mode != "free":
+                self.apply_widget_position_mode()
+
             if not self.was_dragging:
                 self.open_chat()
             event.accept()

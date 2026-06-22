@@ -14,9 +14,11 @@ from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 from app.setting_panel import SettingPanel
 
+
 # --- Safe thread bridge for global shortcuts ---
 class GlobalHotkeyBridge(QObject):
     trigger = Signal(str)
+
 
 class HorizontalWheelScrollArea(QScrollArea):
     def wheelEvent(self, event):
@@ -24,6 +26,7 @@ class HorizontalWheelScrollArea(QScrollArea):
         bar = self.horizontalScrollBar()
         bar.setValue(bar.value() - delta)
         event.accept()
+
 
 class AddLLMDialog(QDialog):
     llm_selected = Signal(str, str)
@@ -114,14 +117,14 @@ class ChatPanel(QWidget):
         self.drag_position = None
         self.tab_animations = []
 
-        self.resize_margin = 8  
-        self.resize_direction = None  
+        self.resize_margin = 8
+        self.resize_direction = None
 
         self.pending_geometry = None
         self.resize_timer = QTimer(self)
-        self.resize_timer.setInterval(5)  
+        self.resize_timer.setInterval(5)
         self.resize_timer.timeout.connect(self.apply_pending_geometry)
-        
+
         # --- Keybind Setup ---
         self.local_shortcuts = []
         self.hotkey_bridge = GlobalHotkeyBridge()
@@ -156,16 +159,23 @@ class ChatPanel(QWidget):
 
         self.setting_panel.color_changed.connect(self.update_content_area_color)
         self.setting_panel.clear_data_requested.connect(self.clear_browsing_data)
-        
+        self.setting_panel.widget_position_changed.connect(self.update_widget_position_mode)
+
         # --- Listen for keybind changes ---
         self.setting_panel.keybinds_updated.connect(self.apply_keybinds)
         self.apply_keybinds(self.setting_panel.current_keybinds)
 
         self.create_layout()
 
+    def update_widget_position_mode(self, mode):
+        if self.bubble and hasattr(self.bubble, "set_widget_position_mode"):
+            self.bubble.set_widget_position_mode(mode)
+
     def apply_keybinds(self, keybinds_dict):
-        try: keyboard.unhook_all()
-        except: pass
+        try:
+            keyboard.unhook_all()
+        except:
+            pass
 
         for sc in self.local_shortcuts:
             sc.setParent(None)
@@ -175,11 +185,13 @@ class ChatPanel(QWidget):
         for action_id, data in keybinds_dict.items():
             key_str = data["key"]
             is_global = data["is_global"]
-            
+
             if not key_str: continue
 
             if is_global:
-                kb_str = key_str.lower().replace("meta", "windows").replace("return", "enter").replace("del", "delete").replace("ins", "insert")
+                kb_str = key_str.lower().replace("meta", "windows").replace("return", "enter").replace("del",
+                                                                                                       "delete").replace(
+                    "ins", "insert")
                 try:
                     keyboard.add_hotkey(kb_str, lambda a=action_id: self.hotkey_bridge.trigger.emit(a))
                 except Exception as e:
@@ -194,39 +206,39 @@ class ChatPanel(QWidget):
             if self.isVisible():
                 self.close_panel()
             else:
-                if self.bubble: 
+                if self.bubble:
                     self.bubble.open_chat()
-                else: 
+                else:
                     self.show()
                     self.raise_()
                     self.activateWindow()
-                    
+
         elif action_id == "hide":
             self.close_panel()
-            
+
         elif action_id == "next_llm":
             self.cycle_next_llm()
-            
+
         elif action_id == "quick_refresh":
             # Standard fast reload (F5)
             self.browser.reload()
-            
+
         elif action_id == "refresh":
             # HARD reload: ignores cache to fix broken pages (Ctrl+R)
             from PySide6.QtWebEngineCore import QWebEnginePage
             self.browser.page().action(QWebEnginePage.ReloadAndBypassCache).trigger()
-        
+
         elif action_id == "pin_toggle":
             # 1. Check the current pin status of the chat panel
             is_pinned = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
-            
+
             # 2. Apply to Chat Panel
             panel_was_visible = self.isVisible()
             if is_pinned:
                 self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
             else:
                 self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
-            
+
             # ONLY redraw the panel if it was already open
             if panel_was_visible:
                 self.show()
@@ -238,7 +250,7 @@ class ChatPanel(QWidget):
                     self.bubble.setWindowFlags(self.bubble.windowFlags() & ~Qt.WindowStaysOnTopHint)
                 else:
                     self.bubble.setWindowFlags(self.bubble.windowFlags() | Qt.WindowStaysOnTopHint)
-                
+
                 # ONLY redraw the bubble if it was currently on screen
                 if bubble_was_visible:
                     self.bubble.show()
@@ -251,15 +263,15 @@ class ChatPanel(QWidget):
                 current_idx = i
                 break
         if current_idx == -1 and self.active_llms: current_idx = 0
-        
+
         next_idx = (current_idx + 1) % len(self.active_llms)
         next_llm = self.active_llms[next_idx]
-        
+
         self.current_provider = next_llm["name"]
         self.current_provider_id = next_llm["id"]
         self.save_setting("current_provider", self.current_provider)
         self.save_setting("current_provider_id", self.current_provider_id)
-        
+
         self.open_llm_url(next_llm["name"], next_llm["url"], next_llm["id"])
 
     def save_setting(self, key, value):
