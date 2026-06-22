@@ -15,10 +15,8 @@ from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 from app.setting_panel import SettingPanel
 from app.utils import get_asset_path
 
-# --- Safe thread bridge for global shortcuts ---
 class GlobalHotkeyBridge(QObject):
     trigger = Signal(str)
-
 
 class HorizontalWheelScrollArea(QScrollArea):
     def wheelEvent(self, event):
@@ -26,7 +24,6 @@ class HorizontalWheelScrollArea(QScrollArea):
         bar = self.horizontalScrollBar()
         bar.setValue(bar.value() - delta)
         event.accept()
-
 
 class AddLLMDialog(QDialog):
     llm_selected = Signal(str, str)
@@ -108,7 +105,6 @@ class AddLLMDialog(QDialog):
         self.llm_selected.emit(name, url)
         self.accept()
 
-
 class ChatPanel(QWidget):
     def __init__(self, bubble=None):
         super().__init__()
@@ -117,7 +113,6 @@ class ChatPanel(QWidget):
         self.drag_position = None
         self.tab_animations = []
 
-        # --- Multitask state ---
         self.multitask_active = False
         self.multitask_view = None
         self.multitask_browsers = {}
@@ -132,7 +127,6 @@ class ChatPanel(QWidget):
         self.resize_timer.setInterval(5)
         self.resize_timer.timeout.connect(self.apply_pending_geometry)
 
-        # --- Keybind Setup ---
         self.local_shortcuts = []
         self.hotkey_bridge = GlobalHotkeyBridge()
         self.hotkey_bridge.trigger.connect(self.execute_hotkey_action)
@@ -147,17 +141,6 @@ class ChatPanel(QWidget):
             QSizePolicy.Expanding
         )
 
-        # The 400x400 minimum set in setup_window() was sized for the
-        # browser page, but the Settings page (fixed 240px sidebar + cards
-        # that need real room to render) has a much larger genuine minimum.
-        # Below that minimum, SettingPanel was being squeezed smaller than
-        # its own minimumSizeHint, which left part of it unpainted (the
-        # "bottom half just shows transparent background" bug). Raising
-        # the whole panel's minimum to whatever Settings actually needs
-        # (plus title bar height + container margins) means the window
-        # simply can't be resized into that broken state, the same way
-        # most apps won't let you shrink below what their settings UI
-        # needs.
         settings_min = self.setting_panel.minimumSizeHint()
         browser_min = QSize(400, 400)
         title_bar_and_margins_height = 45 + 24  # title bar + top/bottom container margins
@@ -169,7 +152,6 @@ class ChatPanel(QWidget):
         self.setting_panel.clear_data_requested.connect(self.clear_browsing_data)
         self.setting_panel.widget_position_changed.connect(self.update_widget_position_mode)
 
-        # --- Listen for keybind changes ---
         self.setting_panel.keybinds_updated.connect(self.apply_keybinds)
         self.apply_keybinds(self.setting_panel.current_keybinds)
 
@@ -237,21 +219,17 @@ class ChatPanel(QWidget):
                 self.current_browser().page().action(QWebEnginePage.ReloadAndBypassCache).trigger()
 
         elif action_id == "pin_toggle":
-            # 1. Check the current pin status of the chat panel
             is_pinned = bool(self.windowFlags() & Qt.WindowStaysOnTopHint)
 
-            # 2. Apply to Chat Panel
             panel_was_visible = self.isVisible()
             if is_pinned:
                 self.setWindowFlags(self.windowFlags() & ~Qt.WindowStaysOnTopHint)
             else:
                 self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
 
-            # ONLY redraw the panel if it was already open
             if panel_was_visible:
                 self.show()
 
-            # 3. Apply the exact same state to the Bubble so they stay synced
             if self.bubble:
                 bubble_was_visible = self.bubble.isVisible()
                 if is_pinned:
@@ -259,7 +237,6 @@ class ChatPanel(QWidget):
                 else:
                     self.bubble.setWindowFlags(self.bubble.windowFlags() | Qt.WindowStaysOnTopHint)
 
-                # ONLY redraw the bubble if it was currently on screen
                 if bubble_was_visible:
                     self.bubble.show()
 
@@ -287,9 +264,6 @@ class ChatPanel(QWidget):
         self.settings.sync()
 
     def setup_window(self):
-        # Minimum size is set in __init__, right after SettingPanel is
-        # constructed, since it needs to account for SettingPanel's actual
-        # minimum size requirements (see the comment there for why).
 
         self.settings = QSettings("MyLLMWidget", "ChatPanel")
         self.current_provider = self.settings.value("current_provider", "ChatGPT")
@@ -461,13 +435,11 @@ class ChatPanel(QWidget):
 
         icon_pixmap = QPixmap(icon_path)
         if not icon_pixmap.isNull():
-            # Directly apply the image without the QPainter recoloring overhead
             self.settings_button.setIcon(QIcon(icon_pixmap))
             self.settings_button.setIconSize(QSize(20, 20))
 
-        # --- NEW BROWSER STACK SETUP ---
         self.browser_stack = QStackedWidget()
-        self.browser_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # Force expansion
+        self.browser_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.browsers = {}
 
         self.profile = QWebEngineProfile("llm_profile", self.browser_stack)
@@ -477,11 +449,9 @@ class ChatPanel(QWidget):
         self.profile.setHttpUserAgent(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-        # Create a background browser for every saved LLM
         for llm in self.active_llms:
             self.add_browser_to_stack(llm["id"], llm["url"])
 
-        # Set the active browser on startup
         if self.current_provider_id and self.current_provider_id in self.browsers:
             self.browser_stack.setCurrentWidget(self.browsers[self.current_provider_id])
         elif self.active_llms:
@@ -515,22 +485,18 @@ class ChatPanel(QWidget):
     def render_active_llms(self):
         self.llm_buttons = {}
 
-        # 1. Iterate backwards to delete tabs and stretches, LEAVING the + button untouched.
         for i in reversed(range(self.llm_layout.count())):
             item = self.llm_layout.itemAt(i)
             widget = item.widget()
 
-            # If it's empty space (stretch) or an old tab, destroy it
             if not widget or widget != self.add_button:
                 self.llm_layout.takeAt(i)
                 if widget:
                     widget.deleteLater()
 
-        # 2. CRITICAL FIX: If this is the first boot, the + button isn't in the layout yet!
         if self.llm_layout.indexOf(self.add_button) == -1:
             self.llm_layout.addWidget(self.add_button, alignment=Qt.AlignVCenter)
 
-        # 3. Insert fresh LLM tabs BEFORE the add_button
         for i, llm in enumerate(self.active_llms):
             btn = QPushButton(llm["name"])
             btn.clicked.connect(
@@ -546,10 +512,8 @@ class ChatPanel(QWidget):
 
             self.llm_buttons[llm["id"]] = btn
 
-            # Insert at current index `i` (pushes the + button naturally to the right)
             self.llm_layout.insertWidget(i, btn, alignment=Qt.AlignVCenter)
 
-        # 4. Insert the temporary Multitask tab if a multitask session exists.
         if self.multitask_active:
             self.multitask_tab_button = QPushButton("Multitask")
             self.multitask_tab_button.setStyleSheet("""
@@ -573,10 +537,8 @@ class ChatPanel(QWidget):
             )
             self.llm_layout.insertWidget(len(self.active_llms), self.multitask_tab_button, alignment=Qt.AlignVCenter)
 
-        # 5. Add stretch space after everything is placed
         self.llm_layout.addStretch()
 
-        # 6. Fail-safe reset
         self.add_button.setEnabled(True)
         self.add_button.show()
 
@@ -672,7 +634,6 @@ class ChatPanel(QWidget):
         deleting_current = llm_id == self.current_provider_id
         del self.active_llms[index]
 
-        # Purge the browser from memory
         if llm_id in self.browsers:
             browser_to_delete = self.browsers.pop(llm_id)
             self.browser_stack.removeWidget(browser_to_delete)
@@ -695,7 +656,6 @@ class ChatPanel(QWidget):
         self.render_active_llms()
 
     def setup_animation_pool(self):
-        # 1. Drop Animation Widget
         self.pool_drop = QLabel(self)
         self.pool_drop.setFixedSize(14, 14)
         self.pool_drop.setStyleSheet("QLabel { background-color: #ececec; border-radius: 7px; }")
@@ -703,7 +663,6 @@ class ChatPanel(QWidget):
         self.pool_drop_opacity = QGraphicsOpacityEffect(self.pool_drop)
         self.pool_drop.setGraphicsEffect(self.pool_drop_opacity)
 
-        # 2. Ripple Animation Widget
         self.pool_ripple = QLabel(self)
         self.pool_ripple.setStyleSheet(
             "QLabel { background-color: transparent; border: 2px solid rgba(165, 120, 255, 180); border-radius: 5px; }")
@@ -711,7 +670,6 @@ class ChatPanel(QWidget):
         self.pool_ripple_opacity = QGraphicsOpacityEffect(self.pool_ripple)
         self.pool_ripple.setGraphicsEffect(self.pool_ripple_opacity)
 
-        # 3. Splash Dots (for add animation)
         self.pool_splash_dots = []
         for i in range(6):
             size = 6 if i % 2 else 8
@@ -725,7 +683,6 @@ class ChatPanel(QWidget):
             dot.setGraphicsEffect(opacity)
             self.pool_splash_dots.append((dot, opacity))
 
-        # 4. Pop Dots (for delete animation)
         self.pool_pop_dots = []
         for i in range(6):
             size = 4 if i % 2 else 5
@@ -739,7 +696,6 @@ class ChatPanel(QWidget):
             dot.setGraphicsEffect(opacity)
             self.pool_pop_dots.append((dot, opacity))
 
-        # 5. Clones for morphing tabs
         self.pool_ghost_btn = QPushButton(self)
         self.pool_ghost_btn.setStyleSheet("""
             QPushButton {
@@ -784,7 +740,6 @@ class ChatPanel(QWidget):
         button.setGraphicsEffect(button_opacity)
         button_opacity.setOpacity(0.0)
 
-        # --- USE POOL ---
         ghost = self.pool_ghost_btn
         ghost.setText(button.text())
         ghost.setGeometry(button_rect)
@@ -839,7 +794,6 @@ class ChatPanel(QWidget):
         pop_dots = []
 
         for i, offset in enumerate(pop_offsets):
-            # --- USE POOL ---
             dot, dot_opacity = self.pool_pop_dots[i]
             dot.move(center.x() - (dot.width() // 2), center.y() - (dot.height() // 2))
             dot_opacity.setOpacity(1.0)
@@ -940,7 +894,6 @@ class ChatPanel(QWidget):
 
         self.add_button.setEnabled(False)
 
-        # --- USE POOL ---
         drop = self.pool_drop
         opacity = self.pool_drop_opacity
         opacity.setOpacity(1.0)
@@ -982,7 +935,6 @@ class ChatPanel(QWidget):
         drop_group.start()
 
     def play_water_splash(self, old_plus_rect, plus_center, new_llm):
-        # --- USE POOL ---
         ripple = self.pool_ripple
         ripple_opacity = self.pool_ripple_opacity
         ripple_opacity.setOpacity(0.9)
@@ -1016,7 +968,6 @@ class ChatPanel(QWidget):
 
         splash_widgets = [ripple]
         for i, offset in enumerate(splash_offsets):
-            # --- USE POOL ---
             dot, opacity = self.pool_splash_dots[i]
             splash_widgets.append(dot)
 
@@ -1075,7 +1026,6 @@ class ChatPanel(QWidget):
         new_tab.hide()
         self.add_button.hide()
 
-        # --- USE POOL ---
         tab_clone = self.pool_tab_clone
         tab_clone.setText(new_tab.text())
         tab_clone.setGeometry(old_plus_rect)
@@ -1405,7 +1355,6 @@ class ChatPanel(QWidget):
         self.multitask_view = wrapper
         self.content_stack.addWidget(wrapper)
 
-
     def try_send_prompt_to_browser(self, browser, prompt, status_label=None):
         escaped_prompt = json.dumps(prompt)
         js = f"""
@@ -1475,7 +1424,6 @@ class ChatPanel(QWidget):
 
         self.title_bar.setLayout(top_bar)
 
-        # --- CLEANED UP CONTAINER LAYOUT ---
         container_layout = QVBoxLayout()
         container_layout.setContentsMargins(12, 12, 12, 12)
         container_layout.addWidget(self.title_bar)
@@ -1489,17 +1437,8 @@ class ChatPanel(QWidget):
 
         container_layout.addWidget(self.content_stack, 1)
 
-        # THIS WAS THE CRITICAL MISSING LINE
         self.container.setLayout(container_layout)
-        # ---------------------------------
 
-        # Compose the initial background from the new base-color +
-        # opacity keys, falling back to migrating the old single-string
-
-        # Compose the initial background from the new base-color +
-        # opacity keys, falling back to migrating the old single-string
-        # "resize_color" (which had a fixed alpha baked in) if this is the
-        # first launch since the opacity slider was added.
         saved_base = self.settings.value("resize_color_base", None)
         saved_opacity = self.settings.value("resize_opacity", None)
         if saved_base is None or saved_opacity is None:
@@ -1517,9 +1456,6 @@ class ChatPanel(QWidget):
         self.show_browser()
 
     def _migrate_legacy_color(self, legacy_value):
-        # Mirrors SettingPanel._migrate_legacy_color — kept independent
-        # rather than imported since ChatPanel needs this once at startup,
-        # before SettingPanel necessarily has a chance to run its own copy.
         if legacy_value == "transparent":
             return "transparent", 50
         try:
@@ -1557,18 +1493,14 @@ class ChatPanel(QWidget):
             self.hide()
 
     def update_content_area_color(self, new_color):
-        # new_color arrives already fully composed (base RGB + current
-        # opacity baked in as alpha) from SettingPanel's color_changed
-        # signal — nothing left to do here but apply and persist it.
         self.container.setStyleSheet(
             f"QFrame#mainContainer {{ background-color: {new_color}; border: 1px solid rgba(255, 255, 255, 20); border-radius: 24px; }}")
-        self.save_setting("resize_color", new_color)  # kept for any other code still reading this key
+        self.save_setting("resize_color", new_color)
 
     def clear_browsing_data(self):
         self.profile.cookieStore().deleteAllCookies()
         self.profile.clearHttpCache()
 
-        # Reload all background pages
         for browser in self.browsers.values():
             browser.reload()
 

@@ -72,17 +72,14 @@ class CustomSlider(QWidget):
 
         painter.setPen(Qt.NoPen)
 
-        # Draw Background Track
         painter.setBrush(QBrush(track_color))
         painter.drawRoundedRect(0, track_y, w, track_h, 3, 3)
 
-        # Draw Fill Track
         ratio = (self._value - self._min) / max(1, (self._max - self._min))
         fill_w = ratio * w
         painter.setBrush(QBrush(fill_color))
         painter.drawRoundedRect(0, track_y, fill_w, track_h, 3, 3)
 
-        # Draw Handle
         painter.setBrush(QBrush(handle_color))
         handle_x = max(0, min(w - handle_r * 2, fill_w - handle_r))
         painter.drawEllipse(handle_x, int(h / 2 - handle_r), handle_r * 2, handle_r * 2)
@@ -115,12 +112,10 @@ class SettingPanel(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Load saved keybinds from disk, or use defaults
         self.settings = QSettings("MyLLMWidget", "Keybinds")
         saved_binds = self.settings.value("shortcuts")
         if saved_binds:
             self.current_keybinds = json.loads(saved_binds)
-            # Ensure all default keys exist in case we add new ones in future updates
             for k, v in DEFAULT_KEYBINDS.items():
                 if k not in self.current_keybinds:
                     self.current_keybinds[k] = v
@@ -179,7 +174,6 @@ class SettingPanel(QWidget):
         if legacy_value == "transparent":
             return "transparent", 50
 
-        # legacy_value looks like "rgba(15, 15, 15, 220)"
         try:
             inner = legacy_value[legacy_value.index("(") + 1: legacy_value.index(")")]
             r, g, b, a = [int(p.strip()) for p in inner.split(",")]
@@ -187,7 +181,6 @@ class SettingPanel(QWidget):
             opacity_percent = round((a / 255) * 100)
             return base_color, opacity_percent
         except (ValueError, IndexError):
-            # Anything unexpected falls back to the original default look.
             return "rgb(15, 15, 15)", 86  # ~220/255
 
     def _current_rgba_string(self):
@@ -201,8 +194,6 @@ class SettingPanel(QWidget):
         self.selected_base_color = self.preset_rgb[button]
         is_transparent = self.selected_base_color == "transparent"
 
-        # Opacity is meaningless for "no color at all" — disable the
-        # slider rather than let it silently do nothing.
         self.opacity_slider.setEnabled(not is_transparent)
 
         self._emit_and_save_appearance()
@@ -239,7 +230,6 @@ class SettingPanel(QWidget):
 
     def reset_keybinds(self):
         self.current_keybinds = copy.deepcopy(DEFAULT_KEYBINDS)
-        # Update the UI inputs to match the defaults
         for action_id, data in self.current_keybinds.items():
             if action_id in self.keybind_widgets:
                 w = self.keybind_widgets[action_id]
@@ -261,7 +251,6 @@ class SettingPanel(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ---------------- LEFT SIDEBAR ----------------
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebar")
         self.sidebar.setFixedWidth(180)
@@ -276,12 +265,11 @@ class SettingPanel(QWidget):
 
         icon_label = QLabel()
         icon_path = get_asset_path(os.path.join("assets", "portalbig.png"))
-        
+
         if os.path.exists(icon_path):
             logo_pixmap = QPixmap(icon_path)
-            
+
             if not logo_pixmap.isNull():
-                # Directly apply the image since the background is already transparent
                 icon_label.setPixmap(logo_pixmap.scaled(32, 32, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         title = QLabel("Settings")
@@ -314,10 +302,8 @@ class SettingPanel(QWidget):
         sidebar_layout.addWidget(self.keybinds_btn)
         sidebar_layout.addStretch()
 
-        # ---------------- RIGHT CONTENT AREA ----------------
         self.content_stack = QStackedWidget()
 
-        # === PAGE 0: APPEARANCE ===
         self.appearance_page = QWidget()
         app_layout = QVBoxLayout(self.appearance_page)
         app_layout.setContentsMargins(40, 40, 40, 40)
@@ -344,13 +330,6 @@ class SettingPanel(QWidget):
         self.color_group = QButtonGroup(self)
         self.color_group.setExclusive(True)
 
-        # Each preset now stores only its base RGB (no alpha baked in) —
-        # opacity is controlled separately by the slider below, so the two
-        # can be mixed independently (e.g. purple at 30% or grey at 90%).
-        # "transparent" has no RGB at all, so it's tracked as a special
-        # case (self.selected_base_color = "transparent") and the slider
-        # is disabled while it's active, since there's no color for an
-        # alpha value to apply to.
         self.btn_transparent = QPushButton("✕")
         self.btn_transparent.setFixedSize(40, 40)
         self.btn_transparent.setCheckable(True)
@@ -385,8 +364,6 @@ class SettingPanel(QWidget):
         color_layout.addWidget(self.btn_purple)
         color_layout.addWidget(self.btn_blue)
 
-        # Base RGB for each preset, keyed by the button that selects it.
-        # "transparent" is the special no-color case.
         self.preset_rgb = {
             self.btn_transparent: "transparent",
             self.btn_grey: "rgb(15, 15, 15)",
@@ -396,10 +373,6 @@ class SettingPanel(QWidget):
 
         app_settings = QSettings("MyLLMWidget", "ChatPanel")
 
-        # Migrate from the old scheme (a single rgba(...) string with alpha
-        # baked in) if that's all that's saved — pull out the RGB and a
-        # reasonable starting opacity so existing users keep roughly the
-        # look they had, now adjustable via the slider.
         saved_base_color = app_settings.value("resize_color_base", None)
         saved_opacity = app_settings.value("resize_opacity", None)
 
@@ -422,7 +395,6 @@ class SettingPanel(QWidget):
         color_card_layout.addLayout(color_layout)
         app_layout.addWidget(color_card)
 
-        # --- Opacity card (separate from Window Color) ---
         opacity_card = QFrame()
         opacity_card.setProperty("class", "settingCard")
         opacity_card_layout = QVBoxLayout(opacity_card)
@@ -436,7 +408,6 @@ class SettingPanel(QWidget):
         opacity_row = QHBoxLayout()
         opacity_row.setSpacing(15)
 
-        # --- THE CUSTOM SLIDER IMPLEMENTATION ---
         self.opacity_slider = CustomSlider()
         self.opacity_slider.setMinimum(0)
         self.opacity_slider.setMaximum(100)
@@ -453,7 +424,6 @@ class SettingPanel(QWidget):
 
         app_layout.addWidget(opacity_card)
 
-        # --- Widget position card ---
         position_card = QFrame()
         position_card.setProperty("class", "settingCard")
         position_card_layout = QVBoxLayout(position_card)
@@ -510,16 +480,12 @@ class SettingPanel(QWidget):
         position_card_layout.addLayout(position_buttons)
         app_layout.addWidget(position_card)
 
-        # Wire up: clicking a preset updates the base color and re-emits
-        # the combined rgba string at the current opacity. Dragging the
-        # slider updates opacity and re-emits at the current color.
         self.btn_transparent.clicked.connect(lambda: self._on_color_selected(self.btn_transparent))
         self.btn_grey.clicked.connect(lambda: self._on_color_selected(self.btn_grey))
         self.btn_purple.clicked.connect(lambda: self._on_color_selected(self.btn_purple))
         self.btn_blue.clicked.connect(lambda: self._on_color_selected(self.btn_blue))
         self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
 
-        # === PAGE 1: PRIVACY ===
         self.privacy_page = QWidget()
         priv_layout = QVBoxLayout(self.privacy_page)
         priv_layout.setContentsMargins(40, 40, 40, 40)
@@ -556,7 +522,6 @@ class SettingPanel(QWidget):
         priv_card_layout.addLayout(btn_layout)
         priv_layout.addWidget(priv_card)
 
-        # === PAGE 2: KEYBINDS ===
         self.keybinds_page = QWidget()
         kb_layout = QVBoxLayout(self.keybinds_page)
         kb_layout.setContentsMargins(40, 40, 40, 40)
@@ -584,7 +549,6 @@ class SettingPanel(QWidget):
         kb_card_layout.setContentsMargins(20, 20, 20, 20)
         kb_card_layout.setSpacing(10)
 
-        # Function to build rows dynamically based on the saved dictionary
         def add_keybind_row(action_id, data, is_last=False):
             row_widget = QWidget()
             row_widget.setObjectName("transparentWidget")
@@ -606,7 +570,6 @@ class SettingPanel(QWidget):
             key_edit = QKeySequenceEdit(QKeySequence(data["key"]))
             key_edit.setFixedWidth(180)
 
-            # Connect Signals to Save Logic
             toggle.toggled.connect(lambda checked, t=toggle, a=action_id: [t.setText("Global" if checked else "Local"),
                                                                            self.update_keybind_scope(a, checked)])
             key_edit.keySequenceChanged.connect(lambda seq, a=action_id: self.update_keybind_seq(a, seq.toString()))
@@ -616,7 +579,6 @@ class SettingPanel(QWidget):
             row_layout.addWidget(key_edit)
             kb_card_layout.addWidget(row_widget)
 
-            # Store references so the Reset button can edit them later
             self.keybind_widgets[action_id] = {"edit": key_edit, "toggle": toggle, "label": lbl}
 
             if not is_last:
@@ -625,19 +587,16 @@ class SettingPanel(QWidget):
                 divider.setProperty("class", "rowDivider")
                 kb_card_layout.addWidget(divider)
 
-        # Dynamically draw rows based on current data
         keys = list(self.current_keybinds.keys())
         for i, action_id in enumerate(keys):
             add_keybind_row(action_id, self.current_keybinds[action_id], is_last=(i == len(keys) - 1))
 
         kb_layout.addWidget(kb_card)
 
-        # Build the Stack
         self.content_stack.addWidget(self.appearance_page)
         self.content_stack.addWidget(self.privacy_page)
         self.content_stack.addWidget(self.keybinds_page)
 
-        # Connections
         self.nav_group.idClicked.connect(self.content_stack.setCurrentIndex)
 
         main_layout.addWidget(self.sidebar)
