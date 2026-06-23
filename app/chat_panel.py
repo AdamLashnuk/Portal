@@ -489,61 +489,77 @@ class ChatPanel(QWidget):
 
     def render_active_llms(self):
         self.llm_buttons = {}
+        new_ids = [llm["id"] for llm in self.active_llms]
+        current_ids = list(self.llm_buttons.keys())
 
-        for i in reversed(range(self.llm_layout.count())):
-            item = self.llm_layout.itemAt(i)
-            widget = item.widget()
-
-            if not widget or widget != self.add_button:
-                self.llm_layout.takeAt(i)
-                if widget:
-                    widget.deleteLater()
+        for curr_id in current_ids:
+            if curr_id not in new_ids:
+                btn = self.llm_buttons.pop(curr_id)
+                self.llm_layout.removeWidget(btn)
+                btn.deleteLater()
 
         if self.llm_layout.indexOf(self.add_button) == -1:
             self.llm_layout.addWidget(self.add_button, alignment=Qt.AlignVCenter)
 
         for i, llm in enumerate(self.active_llms):
-            btn = QPushButton(llm["name"])
+            llm_id = llm["id"]
+            
+            if llm_id in self.llm_buttons:
+                btn = self.llm_buttons[llm_id]
+                btn.setText(llm["name"])
+                
+                try:
+                    btn.clicked.disconnect()
+                    btn.customContextMenuRequested.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
+            else:
+                btn = QPushButton(llm["name"])
+                btn.setContextMenuPolicy(Qt.CustomContextMenu)
+                self.llm_buttons[llm_id] = btn
+
             btn.clicked.connect(
-                lambda checked=False, name=llm["name"], url=llm["url"], llm_id=llm["id"]:
-                self.open_llm_url(name, url, llm_id)
+                lambda checked=False, name=llm["name"], url=llm["url"], lid=llm_id:
+                self.open_llm_url(name, url, lid)
             )
-
-            btn.setContextMenuPolicy(Qt.CustomContextMenu)
             btn.customContextMenuRequested.connect(
-                lambda pos, button=btn, llm_id=llm["id"]:
-                self.show_llm_context_menu(button, llm_id)
+                lambda pos, button=btn, lid=llm_id:
+                self.show_llm_context_menu(button, lid)
             )
-
-            self.llm_buttons[llm["id"]] = btn
 
             self.llm_layout.insertWidget(i, btn, alignment=Qt.AlignVCenter)
 
         if self.multitask_active:
-            self.multitask_tab_button = QPushButton("Multitask")
-            self.multitask_tab_button.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(99, 102, 241, 0.20);
-                    color: #ffffff;
-                    border: 1px solid rgba(129, 140, 248, 0.65);
-                    border-radius: 10px;
-                    padding: 8px 14px;
-                    font-size: 14px;
-                    font-weight: 600;
-                }
-                QPushButton:hover {
-                    background-color: rgba(99, 102, 241, 0.32);
-                }
-            """)
-            self.multitask_tab_button.clicked.connect(self.show_multitask_tab)
-            self.multitask_tab_button.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.multitask_tab_button.customContextMenuRequested.connect(
-                lambda pos, button=self.multitask_tab_button: self.show_multitask_context_menu(button)
-            )
+            if not hasattr(self, 'multitask_tab_button'):
+                self.multitask_tab_button = QPushButton("Multitask")
+                self.multitask_tab_button.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(99, 102, 241, 0.20);
+                        color: #ffffff;
+                        border: 1px solid rgba(129, 140, 248, 0.65);
+                        border-radius: 10px;
+                        padding: 8px 14px;
+                        font-size: 14px;
+                        font-weight: 600;
+                    }
+                    QPushButton:hover {
+                        background-color: rgba(99, 102, 241, 0.32);
+                    }
+                """)
+                self.multitask_tab_button.clicked.connect(self.show_multitask_tab)
+                self.multitask_tab_button.setContextMenuPolicy(Qt.CustomContextMenu)
+                self.multitask_tab_button.customContextMenuRequested.connect(
+                    lambda pos, button=self.multitask_tab_button: self.show_multitask_context_menu(button)
+                )
+            
             self.llm_layout.insertWidget(len(self.active_llms), self.multitask_tab_button, alignment=Qt.AlignVCenter)
+            
+        elif hasattr(self, 'multitask_tab_button'):
+            self.llm_layout.removeWidget(self.multitask_tab_button)
+            self.multitask_tab_button.deleteLater()
+            del self.multitask_tab_button
 
-        self.llm_layout.addStretch()
-
+        
         self.add_button.setEnabled(True)
         self.add_button.show()
 
