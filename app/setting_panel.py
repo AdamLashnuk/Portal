@@ -1,7 +1,8 @@
 import os
 import json
 import copy
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget,
+import sys as sys_module
+from PySide6.QtWidgets import (QComboBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget,
                                QButtonGroup, QKeySequenceEdit, QSlider)
 from PySide6.QtCore import Qt, Signal, QSettings
 from PySide6.QtGui import QPixmap, QColor, QImage, QKeySequence, QPainter, QBrush
@@ -105,7 +106,6 @@ class CustomSlider(QWidget):
 class SettingPanel(QWidget):
     color_changed = Signal(str)
     opacity_changed = Signal(int)
-    widget_position_changed = Signal(str)
     clear_data_requested = Signal()
     keybinds_updated = Signal(dict)  # Tells ChatPanel to reload its shortcuts
 
@@ -213,13 +213,6 @@ class SettingPanel(QWidget):
         app_settings.setValue("resize_opacity", self.current_opacity)
         app_settings.sync()
 
-    def _on_widget_position_selected(self, mode):
-        self.current_widget_position = mode
-        app_settings = QSettings("MyLLMWidget", "ChatPanel")
-        app_settings.setValue("widget_position_mode", mode)
-        app_settings.sync()
-        self.widget_position_changed.emit(mode)
-
     def update_keybind_seq(self, action_id, seq_str):
         self.current_keybinds[action_id]["key"] = seq_str
         self.save_all_keybinds()
@@ -244,6 +237,16 @@ class SettingPanel(QWidget):
                 w["edit"].blockSignals(False)
                 w["toggle"].blockSignals(False)
         self.save_all_keybinds()
+
+    def _on_startup_position_selected(self, mode):
+        self.current_startup_position = mode
+
+        self.app_settings.setValue(
+            "widget_startup_position",
+            mode
+        )
+
+        self.app_settings.sync()
 
     def create_layout(self):
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -289,17 +292,17 @@ class SettingPanel(QWidget):
         self.nav_group.addButton(self.appearance_btn, 0)
         sidebar_layout.addWidget(self.appearance_btn)
 
-        self.privacy_btn = QPushButton("Privacy && Data")
-        self.privacy_btn.setProperty("class", "sidebarButton")
-        self.privacy_btn.setCheckable(True)
-        self.nav_group.addButton(self.privacy_btn, 1)
-        sidebar_layout.addWidget(self.privacy_btn)
-
         self.keybinds_btn = QPushButton("Keybinds")
         self.keybinds_btn.setProperty("class", "sidebarButton")
         self.keybinds_btn.setCheckable(True)
-        self.nav_group.addButton(self.keybinds_btn, 2)
+        self.nav_group.addButton(self.keybinds_btn, 1)
         sidebar_layout.addWidget(self.keybinds_btn)
+
+        self.privacy_btn = QPushButton("Privacy && Data")
+        self.privacy_btn.setProperty("class", "sidebarButton")
+        self.privacy_btn.setCheckable(True)
+        self.nav_group.addButton(self.privacy_btn, 2)
+        sidebar_layout.addWidget(self.privacy_btn)
         sidebar_layout.addStretch()
 
         self.content_stack = QStackedWidget()
@@ -354,30 +357,57 @@ class SettingPanel(QWidget):
         self.btn_blue.setStyleSheet(
             "QPushButton { background-color: rgb(15, 30, 50); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
 
+        self.btn_red = QPushButton()
+        self.btn_red.setFixedSize(40, 40)
+        self.btn_red.setCheckable(True)
+        self.btn_red.setStyleSheet(
+            "QPushButton { background-color: rgb(50, 15, 20); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
+
+        self.btn_green = QPushButton()
+        self.btn_green.setFixedSize(40, 40)
+        self.btn_green.setCheckable(True)
+        self.btn_green.setStyleSheet(
+            "QPushButton { background-color: rgb(15, 40, 25); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
+
+        self.btn_amber = QPushButton()
+        self.btn_amber.setFixedSize(40, 40)
+        self.btn_amber.setCheckable(True)
+        self.btn_amber.setStyleSheet(
+            "QPushButton { background-color: rgb(55, 35, 15); border: 2px solid #333333; border-radius: 8px; } QPushButton:hover { border: 2px solid #b4b4b4; } QPushButton:checked { border: 2px solid #6366f1; }")
+
         self.color_group.addButton(self.btn_transparent)
         self.color_group.addButton(self.btn_grey)
         self.color_group.addButton(self.btn_purple)
         self.color_group.addButton(self.btn_blue)
+        self.color_group.addButton(self.btn_red)     
+        self.color_group.addButton(self.btn_green)   
+        self.color_group.addButton(self.btn_amber)
 
         color_layout.addWidget(self.btn_transparent)
         color_layout.addWidget(self.btn_grey)
         color_layout.addWidget(self.btn_purple)
         color_layout.addWidget(self.btn_blue)
+        color_layout.addWidget(self.btn_red)       
+        color_layout.addWidget(self.btn_green)     
+        color_layout.addWidget(self.btn_amber)
 
         self.preset_rgb = {
             self.btn_transparent: "transparent",
             self.btn_grey: "rgb(15, 15, 15)",
             self.btn_purple: "rgb(45, 25, 65)",
             self.btn_blue: "rgb(15, 30, 50)",
+            self.btn_red: "rgb(50, 15, 20)",      
+            self.btn_green: "rgb(15, 40, 25)",    
+            self.btn_amber: "rgb(55, 35, 15)",    
         }
 
-        app_settings = QSettings("MyLLMWidget", "ChatPanel")
+        self.app_settings = QSettings("MyLLMWidget", "ChatPanel")
 
-        saved_base_color = app_settings.value("resize_color_base", None)
-        saved_opacity = app_settings.value("resize_opacity", None)
+        saved_base_color = self.app_settings.value("resize_color_base", None)
+        saved_opacity = self.app_settings.value("resize_opacity", None)
 
         if saved_base_color is None or saved_opacity is None:
-            legacy_color = app_settings.value("resize_color", "rgba(15, 15, 15, 220)")
+            legacy_color = self.app_settings.value("resize_color", "rgba(15, 15, 15, 220)")
             saved_base_color, saved_opacity = self._migrate_legacy_color(legacy_color)
 
         self.selected_base_color = saved_base_color
@@ -389,6 +419,12 @@ class SettingPanel(QWidget):
             self.btn_purple.setChecked(True)
         elif saved_base_color == "rgb(15, 30, 50)":
             self.btn_blue.setChecked(True)
+        elif saved_base_color == "rgb(50, 15, 20)":   
+            self.btn_red.setChecked(True)             
+        elif saved_base_color == "rgb(15, 40, 25)":  
+            self.btn_green.setChecked(True)          
+        elif saved_base_color == "rgb(55, 35, 15)":  
+            self.btn_amber.setChecked(True)           
         else:
             self.btn_grey.setChecked(True)
 
@@ -424,66 +460,118 @@ class SettingPanel(QWidget):
 
         app_layout.addWidget(opacity_card)
 
-        position_card = QFrame()
-        position_card.setProperty("class", "settingCard")
-        position_card_layout = QVBoxLayout(position_card)
-        position_card_layout.setContentsMargins(20, 20, 20, 20)
-        position_card_layout.setSpacing(12)
+        # --- WIDGET STARTUP POSITION CARD ---
+        startup_pos_card = QFrame()
+        startup_pos_card.setProperty("class", "settingCard")
 
-        position_title = QLabel("Widget Position")
-        position_title.setProperty("class", "cardTitle")
-        position_card_layout.addWidget(position_title)
+        startup_pos_layout = QVBoxLayout(startup_pos_card)
+        startup_pos_layout.setContentsMargins(20, 20, 20, 20)
+        startup_pos_layout.setSpacing(12)
 
-        position_desc = QLabel("Choose Free Roam to drag the bubble anywhere, or lock it to one corner of your screen.")
-        position_desc.setProperty("class", "cardText")
-        position_desc.setWordWrap(True)
-        position_card_layout.addWidget(position_desc)
+        startup_pos_title = QLabel("Widget Startup Position")
+        startup_pos_title.setProperty("class", "cardTitle")
+        startup_pos_layout.addWidget(startup_pos_title)
 
-        self.position_group = QButtonGroup(self)
-        self.position_group.setExclusive(True)
+        startup_pos_desc = QLabel(
+            "Determines the exact screen location where Portal spawns upon opening."
+        )
+        startup_pos_desc.setProperty("class", "cardText")
+        startup_pos_desc.setWordWrap(True)
+        startup_pos_layout.addWidget(startup_pos_desc)
 
-        position_buttons = QHBoxLayout()
-        position_buttons.setSpacing(8)
 
-        self.btn_pos_free = QPushButton("Free Roam")
-        self.btn_pos_top_left = QPushButton("Top Left")
-        self.btn_pos_top_right = QPushButton("Top Right")
-        self.btn_pos_bottom_left = QPushButton("Bottom Left")
-        self.btn_pos_bottom_right = QPushButton("Bottom Right")
+        self.startup_position_group = QButtonGroup(self)
+        self.startup_position_group.setExclusive(True)
 
-        self.position_modes = {
-            self.btn_pos_free: "free",
-            self.btn_pos_top_left: "top_left",
-            self.btn_pos_top_right: "top_right",
-            self.btn_pos_bottom_left: "bottom_left",
-            self.btn_pos_bottom_right: "bottom_right",
+        startup_buttons_layout = QHBoxLayout()
+        startup_buttons_layout.setSpacing(8)
+
+        self.startup_pos_buttons = {}
+
+        startup_position_modes = {
+            "Center": "center",
+            "Top Right": "top_right",
+            "Top Left": "top_left",
+            "Bottom Right": "bottom_right",
+            "Bottom Left": "bottom_left",
         }
 
-        for btn in self.position_modes:
+        for text, mode in startup_position_modes.items():
+            btn = QPushButton(text)
+
             btn.setProperty("class", "scopeToggle")
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
-            self.position_group.addButton(btn)
-            position_buttons.addWidget(btn)
 
-        self.current_widget_position = app_settings.value("widget_position_mode", "free")
-        checked_button = self.btn_pos_free
-        for btn, mode in self.position_modes.items():
-            if mode == self.current_widget_position:
+            self.startup_position_group.addButton(btn)
+
+            startup_buttons_layout.addWidget(btn)
+
+            self.startup_pos_buttons[btn] = mode
+
+
+        saved_startup_position = self.app_settings.value(
+            "widget_startup_position",
+            "center"
+        )
+
+        checked_button = None
+
+        for btn, mode in self.startup_pos_buttons.items():
+            if mode == saved_startup_position:
                 checked_button = btn
                 break
-        checked_button.setChecked(True)
 
-        for btn, mode in self.position_modes.items():
-            btn.clicked.connect(lambda checked=False, m=mode: self._on_widget_position_selected(m))
+        if checked_button:
+            checked_button.setChecked(True)
 
-        position_card_layout.addLayout(position_buttons)
-        app_layout.addWidget(position_card)
+
+        for btn, mode in self.startup_pos_buttons.items():
+            btn.clicked.connect(
+                lambda checked=False, m=mode:
+                self._on_startup_position_selected(m)
+            )
+
+
+        startup_pos_layout.addLayout(startup_buttons_layout)
+
+        app_layout.addWidget(startup_pos_card)
+
+        if sys_module.platform == "win32":
+            from app.utils import set_startup, check_startup_enabled
+
+            startup_card = QFrame()
+            startup_card.setProperty("class", "settingCard")
+            startup_card_layout = QVBoxLayout(startup_card)
+            startup_card_layout.setContentsMargins(20, 20, 20, 20)
+            startup_card_layout.setSpacing(12)
+
+            startup_title = QLabel("System")
+            startup_title.setProperty("class", "cardTitle")
+            startup_card_layout.addWidget(startup_title)
+
+            self.btn_startup = QPushButton("Launch Portal on Startup")
+            self.btn_startup.setProperty("class", "scopeToggle")
+            self.btn_startup.setCheckable(True)
+            self.btn_startup.setCursor(Qt.PointingHandCursor)
+            
+            # Reads the actual Windows Registry to see if it should be checked visually
+            self.btn_startup.setChecked(check_startup_enabled())
+
+            # When clicked, update the registry automatically
+            self.btn_startup.toggled.connect(lambda checked: set_startup(checked))
+
+            startup_card_layout.addWidget(self.btn_startup)
+            app_layout.addWidget(startup_card)
+
 
         self.btn_transparent.clicked.connect(lambda: self._on_color_selected(self.btn_transparent))
         self.btn_grey.clicked.connect(lambda: self._on_color_selected(self.btn_grey))
         self.btn_purple.clicked.connect(lambda: self._on_color_selected(self.btn_purple))
         self.btn_blue.clicked.connect(lambda: self._on_color_selected(self.btn_blue))
+        self.btn_red.clicked.connect(lambda: self._on_color_selected(self.btn_red))       
+        self.btn_green.clicked.connect(lambda: self._on_color_selected(self.btn_green))   
+        self.btn_amber.clicked.connect(lambda: self._on_color_selected(self.btn_amber))   
         self.opacity_slider.valueChanged.connect(self._on_opacity_changed)
 
         self.privacy_page = QWidget()
@@ -554,7 +642,7 @@ class SettingPanel(QWidget):
             row_widget.setObjectName("transparentWidget")
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
-#
+
             lbl = QLabel(data["label"])
             lbl.setProperty("class", "cardTitle")
             row_layout.addWidget(lbl)

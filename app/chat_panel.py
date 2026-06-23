@@ -141,25 +141,35 @@ class ChatPanel(QWidget):
             QSizePolicy.Expanding
         )
 
-        settings_min = self.setting_panel.minimumSizeHint()
-        browser_min = QSize(400, 400)
-        title_bar_and_margins_height = 45 + 24  # title bar + top/bottom container margins
-        min_width = max(browser_min.width(), settings_min.width() + 24)
-        min_height = max(browser_min.height(), settings_min.height() + title_bar_and_margins_height)
-        self.setMinimumSize(min_width, min_height)
-
         self.setting_panel.color_changed.connect(self.update_content_area_color)
         self.setting_panel.clear_data_requested.connect(self.clear_browsing_data)
-        self.setting_panel.widget_position_changed.connect(self.update_widget_position_mode)
 
         self.setting_panel.keybinds_updated.connect(self.apply_keybinds)
         self.apply_keybinds(self.setting_panel.current_keybinds)
 
         self.create_layout()
+        self.apply_real_minimum_size()
 
-    def update_widget_position_mode(self, mode):
-        if self.bubble and hasattr(self.bubble, "set_widget_position_mode"):
-            self.bubble.set_widget_position_mode(mode)
+    def apply_real_minimum_size(self):
+        """
+        Computes the true minimum window size from the fully-assembled layout,
+        rather than guessing at title bar / margin constants. Must run after
+        create_layout() so self.container's real QVBoxLayout (with its actual
+        margins/spacing) exists. Temporarily switches the content stack to the
+        settings panel — the larger of the two views — so the layout's
+        sizeHint reflects whichever page actually drives the minimum.
+        """
+        previous_widget = self.content_stack.currentWidget()
+        self.content_stack.setCurrentWidget(self.setting_panel)
+
+        browser_min = QSize(400, 400)
+        layout_hint = self.container.layout().minimumSize()
+
+        min_width = max(browser_min.width(), layout_hint.width())
+        min_height = max(browser_min.height(), layout_hint.height())
+        self.setMinimumSize(min_width, min_height)
+
+        self.content_stack.setCurrentWidget(previous_widget)
 
     def apply_keybinds(self, keybinds_dict):
         try:
@@ -1562,12 +1572,21 @@ class ChatPanel(QWidget):
         QWebEngineViews repaint badly while a frameless translucent window is being resized,
         especially from the left/top edges because the window position and size change together.
         Hide whichever heavy view is currently active, then show it again on release.
+
+        The settings panel is included here too: it's a real, live Qt layout
+        (sidebar + cards) that re-flows and re-measures itself on every resize
+        tick. Left visible during a drag, it fights the outer ChatPanel's own
+        timer-throttled resize for control of the geometry, which is what let
+        the window land below its true minimum specifically while this page
+        was the current one.
         """
         self.resize_hidden_widget = None
         current = self.content_stack.currentWidget()
 
         if current is self.browser_stack:
             self.resize_hidden_widget = self.browser_stack
+        elif current is self.setting_panel:
+            self.resize_hidden_widget = self.setting_panel
         elif getattr(self, "multitask_view", None) is not None and current is self.multitask_view:
             self.resize_hidden_widget = self.multitask_view
 
@@ -1628,6 +1647,25 @@ class ChatPanel(QWidget):
             if self.resize_direction in (Qt.BottomSection, Qt.BottomLeftSection, Qt.BottomRightSection):
                 new_bottom = max(geom.top() + min_h - 1, geom.bottom() + delta.y())
 
+            # Final safety clamp: regardless of any drift in initial_geometry
+            # (e.g. from the native window manager resolving a prior setGeometry
+            # call to a slightly different size than requested), never let the
+            # actually-applied rect be smaller than the real minimum. Clamping
+            # here, on the rect we're about to apply, is more reliable than only
+            # clamping the per-edge delta math against a baseline that may itself
+            # already be stale.
+            if new_right - new_left + 1 < min_w:
+                if self.resize_direction in (Qt.LeftSection, Qt.TopLeftSection, Qt.BottomLeftSection):
+                    new_left = new_right - min_w + 1
+                else:
+                    new_right = new_left + min_w - 1
+
+            if new_bottom - new_top + 1 < min_h:
+                if self.resize_direction in (Qt.TopSection, Qt.TopLeftSection, Qt.TopRightSection):
+                    new_top = new_bottom - min_h + 1
+                else:
+                    new_bottom = new_top + min_h - 1
+
             target = QRect(QPoint(new_left, new_top), QPoint(new_right, new_bottom))
 
             if self.geometry() != target:
@@ -1642,6 +1680,9 @@ class ChatPanel(QWidget):
     def apply_pending_geometry(self):
         if self.pending_geometry is not None:
             left, top, width, height = self.pending_geometry
+            min_w, min_h = self.minimumWidth(), self.minimumHeight()
+            width = max(width, min_w)
+            height = max(height, min_h)
             self.setGeometry(left, top, width, height)
             self.pending_geometry = None
 

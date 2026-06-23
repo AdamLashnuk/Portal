@@ -2,13 +2,18 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from app.widget import FloatingWidget
+from app.utils import initialize_startup_default 
 import os
 
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
     "--disable-features=AutomationControlled"
 )
+
 # This starts the entire app
 app = QApplication(sys.argv)
+
+# Check the registry on boot
+initialize_startup_default()
 
 # Prevents the app from terminating when hidden via the tray icon ---
 app.setQuitOnLastWindowClosed(False) 

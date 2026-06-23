@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import QWidget, QSystemTrayIcon, QMenu, QApplication
 from PySide6.QtCore import Qt, QPoint, QRect, QSettings
-from PySide6.QtGui import QPainter, QColor, QPixmap, QPen, QAction, QIcon, QCursor
+from PySide6.QtGui import QGuiApplication, QPainter, QColor, QPixmap, QPen, QAction, QIcon, QCursor
 from app.animation_window import AnimationWindow
 from app.chat_panel import ChatPanel
 from app.utils import get_asset_path
@@ -20,8 +20,43 @@ class FloatingWidget(QWidget):
         self.animation_window.close_finished.connect(self.show_bubble_after_animation)
 
         self.setup_window()
-        self.chat_panel.setting_panel.widget_position_changed.connect(self.set_widget_position_mode)
         self.setup_tray_icon()
+        self.set_initial_position()
+
+    def set_initial_position(self):
+        settings = QSettings("MyLLMWidget", "ChatPanel")
+
+        saved_position = settings.value(
+            "widget_startup_position",
+            "center"
+        )
+        screen = QGuiApplication.primaryScreen().availableGeometry()
+        app_width = self.width()
+        app_height = self.height()
+        margin = 20
+        y_offset = margin + 30  # Pushes it away from the corners
+        
+        if saved_position == "Top Right":
+            x = screen.width() - app_width  # Flush with right edge
+            y = y_offset                    # Pushed down from top corner
+        elif saved_position == "Top Left":
+            x = 0                           # Flush with left edge
+            y = y_offset                    # Pushed down from top corner
+        elif saved_position == "Bottom Right":
+            x = screen.width() - app_width  # Flush with right edge
+            y = screen.height() - app_height - y_offset # Pushed up from bottom corner
+        elif saved_position == "Bottom Left":
+            x = 0                           # Flush with left edge
+            y = screen.height() - app_height - y_offset # Pushed up from bottom corner
+        elif saved_position == "Center":
+            x = (screen.width() - app_width) // 2
+            y = (screen.height() - app_height) // 2
+        else:
+            # Fallback (Top Right)
+            x = screen.width() - app_width
+            y = y_offset
+            
+        self.move(x, y)
 
     def setup_window(self):
         self.setFixedSize(90, 90)
@@ -31,26 +66,10 @@ class FloatingWidget(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground)
 
         self.settings = QSettings("MyLLMWidget", "Portal")
-        self.widget_position_mode = self.settings.value("widget_position_mode", "free")
-        self.apply_widget_position_mode()
 
         logo_path = get_asset_path(os.path.join("assets", "portalbig.png"))
         logo = QPixmap(logo_path)
         self.cached_logo = logo.scaled(85, 85, Qt.KeepAspectRatio, Qt.SmoothTransformation) if not logo.isNull() else None
-
-    def set_widget_position_mode(self, mode):
-        self.widget_position_mode = mode
-        self.settings.setValue("widget_position_mode", mode)
-        self.settings.sync()
-        self.apply_widget_position_mode()
-
-    def apply_widget_position_mode(self):
-        if getattr(self, "widget_position_mode", "free") == "free":
-            return
-        self.move(self.corner_position_for_mode(self.widget_position_mode))
-        if self.chat_panel.isVisible():
-            panel_x, panel_y = self.calculate_chat_position()
-            self.chat_panel.move(panel_x, panel_y)
 
     def target_screen_geometry(self):
         if self.chat_panel.isVisible():
@@ -64,20 +83,6 @@ class FloatingWidget(QWidget):
         if screen is None:
             screen = QApplication.primaryScreen()
         return screen.availableGeometry()
-
-    def corner_position_for_mode(self, mode):
-        margin = 24
-        screen = self.target_screen_geometry()
-        left = screen.left()
-        top = screen.top()
-        right_x = screen.left() + screen.width() - self.width()
-        bottom_y = screen.top() + screen.height() - self.height()
-
-        if mode == "top_left":     return QPoint(left + margin, top + margin)
-        if mode == "top_right":    return QPoint(right_x - margin, top + margin)
-        if mode == "bottom_left":  return QPoint(left + margin, bottom_y - margin)
-        if mode == "bottom_right": return QPoint(right_x - margin, bottom_y - margin)
-        return self.pos()
 
     def setup_tray_icon(self):
         logo_path = get_asset_path(os.path.join("assets", "portalbig.png"))
@@ -132,12 +137,9 @@ class FloatingWidget(QWidget):
     def reset_window_position(self):
         screen = self.target_screen_geometry()
 
-        if self.widget_position_mode == "free":
-            bubble_x = screen.center().x() - (self.width() // 2)
-            bubble_y = screen.center().y() - (self.height() // 2)
-            self.move(bubble_x, bubble_y)
-        else:
-            self.apply_widget_position_mode()
+        bubble_x = screen.center().x() - (self.width() // 2)
+        bubble_y = screen.center().y() - (self.height() // 2)
+        self.move(bubble_x, bubble_y)
 
         panel_x, panel_y = self.calculate_chat_position()
         panel_x = max(screen.left(), min(panel_x, screen.left() + screen.width() - self.chat_panel.width()))
@@ -214,18 +216,17 @@ class FloatingWidget(QWidget):
             self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self.was_dragging = False
             event.accept()
-#
+        elif event.button() == Qt.RightButton:
+            self.tray_menu.exec(event.globalPosition().toPoint())
+            event.accept()
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
-            if self.widget_position_mode == "free":
-                self.was_dragging = True
-                self.move(event.globalPosition().toPoint() - self.drag_position)
+            self.was_dragging = True
+            self.move(event.globalPosition().toPoint() - self.drag_position)
             event.accept()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            if self.widget_position_mode != "free":
-                self.apply_widget_position_mode()
             if not self.was_dragging:
                 self.open_chat()
             event.accept()
