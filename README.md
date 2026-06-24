@@ -112,26 +112,6 @@ python main.py
 
 ---
 
-
-
-### Floating Widget
-
-*Insert screenshot here*
-
-### Expanded Interface
-
-*Insert screenshot here*
-
----
-
-## 🤝 Contributing
-
-Contributions, issues, and feature requests are welcome.
-
-Feel free to open an issue or submit a pull request.
-
----
-
 ## 📄 License
 
 Copyright (c) 2026 Adam Lashnuk, Faris Felamban, Ahmed Abuharba
