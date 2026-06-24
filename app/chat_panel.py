@@ -485,12 +485,17 @@ class ChatPanel(QWidget):
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+        
+        # Add these two lines to allow clipboard access
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
 
         page = QWebEnginePage(self.profile, browser)
 
         def grant_feature_permission(origin, feature):
-            if feature == QWebEnginePage.Feature.MediaAudioCapture:
-                page.setFeaturePermission(origin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
+            # Remove the if statement so it automatically grants all requested features 
+            # (Clipboard, Audio, Notifications, etc.)
+            page.setFeaturePermission(origin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
 
         page.featurePermissionRequested.connect(grant_feature_permission)
         browser.setPage(page)
@@ -1351,12 +1356,15 @@ class ChatPanel(QWidget):
             browser.setMinimumWidth(360)
             browser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             
-            # Hardening: explicitly enable capabilities for multitask tabs as well
             settings = browser.settings()
             settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
             settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
             settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
             settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+            
+            # Add these two lines here as well
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
             
             page = QWebEnginePage(self.profile, browser)
             browser.setPage(page)
