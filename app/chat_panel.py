@@ -1094,6 +1094,7 @@ class ChatPanel(QWidget):
         if self.multitask_prompt_overlay:
             self.multitask_prompt_overlay.deleteLater()
             self.multitask_prompt_overlay = None
+            return
 
         button_rect = self.widget_rect_in_panel(self.multitask_button)
         start_rect = QRect(

@@ -3,8 +3,8 @@ import json
 import copy
 import sys as sys_module
 from PySide6.QtWidgets import (QComboBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget,
-                               QButtonGroup, QKeySequenceEdit, QSlider)
-from PySide6.QtCore import Qt, Signal, QSettings
+                               QButtonGroup, QKeySequenceEdit, QSlider, QLayout, QSizePolicy)
+from PySide6.QtCore import Qt, Signal, QSettings, QRect, QSize, QPoint
 from PySide6.QtGui import QPixmap, QColor, QImage, QKeySequence, QPainter, QBrush
 
 from app.utils import get_asset_path
@@ -150,7 +150,7 @@ class SettingPanel(QWidget):
 
             /* --- Keybinds UI Styling --- */
             QKeySequenceEdit { background-color: #151515; border: 1px solid #333333; border-radius: 6px; color: #ffffff; padding: 6px 10px; }
-            QPushButton.scopeToggle { background-color: #242424; color: #b4b4b4; border: 1px solid #333333; border-radius: 6px; padding: 6px 0px; font-size: 13px; }
+            QPushButton.scopeToggle { background-color: #242424; color: #b4b4b4; border: 1px solid #333333; border-radius: 6px; padding: 6px 0px; font-size: 13px; min-height: 18px; }
             QPushButton.scopeToggle:hover { background-color: #2a2a2a; color: #ececec; }
             QPushButton.scopeToggle:checked { color: #818cf8; border: 1px solid #6366f1; background-color: rgba(99, 102, 241, 0.1); }
             QFrame.rowDivider { background-color: #333333; }
