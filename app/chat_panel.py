@@ -1429,12 +1429,6 @@ class ChatPanel(QWidget):
                 const enterUp = new KeyboardEvent('keyup', {{ key: 'Enter', code: 'Enter', which: 13, keyCode: 13, bubbles: true }});
                 box.dispatchEvent(enterDown);
                 box.dispatchEvent(enterUp);
-
-                const sendButton = Array.from(document.querySelectorAll('button, [role="button"]')).find(btn => {{
-                    const label = (btn.getAttribute('aria-label') || btn.innerText || '').toLowerCase();
-                    return visible(btn) && (label.includes('send') || label.includes('submit'));
-                }});
-                if (sendButton) sendButton.click();
             }}, 250);
             return true;
         }})();
