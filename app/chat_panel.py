@@ -1613,6 +1613,7 @@ class ChatPanel(QWidget):
                 self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
                 event.accept()
 
+    # Resize the window based on the dragged edge or corner.
     def mouseMoveEvent(self, event):
         position = event.position().toPoint()
 
