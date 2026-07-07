@@ -89,7 +89,8 @@ class AddLLMDialog(QDialog):
             {"name": "Gemini", "url": "https://gemini.google.com"},
             {"name": "Perplexity", "url": "https://perplexity.ai"},
             {"name": "DeepSeek", "url": "https://chat.deepseek.com"},
-            {"name": "HuggingFace", "url": "https://huggingface.co/chat/"}
+            {"name": "HuggingFace", "url": "https://huggingface.co/chat/"},
+            {"name": "Z.ai", "url": "https://z.ai/"}
         ]
         self.populate_list(self.all_llms)
 
