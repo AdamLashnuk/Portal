@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import keyboard
+import re
 from PySide6.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel,
                                QFrame, QRubberBand, QGraphicsOpacityEffect, QSizePolicy,
                                QScrollArea, QDialog, QLineEdit, QListWidget, QListWidgetItem,
@@ -116,6 +117,8 @@ class ChatPanel(QWidget):
     def __init__(self, bubble=None):
         super().__init__()
 
+        self.extra_profiles = {}
+
         self.bubble = bubble
         self.drag_position = None
         self.tab_animations = []
@@ -123,7 +126,7 @@ class ChatPanel(QWidget):
         self.multitask_active = False
         self.multitask_view = None
         self.multitask_browsers = {}
-        self.multitask_senders = {}
+        self.multitask_senders = {} 
         self.multitask_tab_button = None
         self.multitask_prompt_overlay = None
 
@@ -504,7 +507,10 @@ class ChatPanel(QWidget):
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
 
-        page = QWebEnginePage(self.profile, browser)
+        idx = self._find_llm_index(llm_id)
+        llm_entry = self.active_llms[idx] if idx != -1 else {}
+        profile = self.get_profile_for_entry(llm_entry)
+        page = QWebEnginePage(profile, browser)
 
         def grant_feature_permission(origin, feature):
             # Remove the if statement so it automatically grants all requested features
@@ -517,6 +523,24 @@ class ChatPanel(QWidget):
 
         self.browsers[llm_id] = browser
         self.browser_stack.addWidget(browser)
+
+    def get_profile_for_entry(self, llm_entry):
+        profile_id = (llm_entry or {}).get("profile_id")
+        if not profile_id:
+            return self.profile
+
+        if profile_id not in self.extra_profiles:
+            app_data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+            storage_path = os.path.join(app_data_dir, "Portal", "session_data_isolated", profile_id)
+            os.makedirs(storage_path, exist_ok=True)
+
+            profile = QWebEngineProfile(f"llm_isolated_{profile_id}", self.browser_stack)
+            profile.setPersistentStoragePath(storage_path)
+            profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
+            profile.setHttpAcceptLanguage("en-US,en;q=0.9")
+            self.extra_profiles[profile_id] = profile
+
+        return self.extra_profiles[profile_id]
 
     def current_browser(self):
         return self.browser_stack.currentWidget()
@@ -611,6 +635,20 @@ class ChatPanel(QWidget):
         elif chosen == delete_action:
             self.delete_llm_entry(llm_id)
 
+    def _base_llm_name(self, name):
+        return re.sub(r"\s\(\d+\)$", "", name)
+
+    def _unique_llm_name(self, name):
+        base_name = self._base_llm_name(name)
+        existing_names = {llm["name"] for llm in self.active_llms}
+        if base_name not in existing_names:
+            return base_name
+        n = 2
+        while f"{base_name} ({n})" in existing_names:
+            n += 1
+        return f"{base_name} ({n})"
+
+
     def _find_llm_index(self, llm_id):
         for i, llm in enumerate(self.active_llms):
             if llm["id"] == llm_id: return i
@@ -640,8 +678,16 @@ class ChatPanel(QWidget):
         if index == -1: return
 
         original = self.active_llms[index]
-        copy_entry = {"id": str(uuid.uuid4()), "name": original["name"], "url": original["url"]}
+        new_name = self._unique_llm_name(original["name"])
+        copy_entry = {
+            "id": str(uuid.uuid4()),
+            "name": new_name,
+            "url": original["url"],
+            "profile_id": original.get("profile_id"),  # None = shared main profile, or same isolated id
+        }
         self.active_llms.insert(index + 1, copy_entry)
+
+        self.add_browser_to_stack(copy_entry["id"], copy_entry["url"])
 
         self.save_setting("active_llms", json.dumps(self.active_llms))
         self.render_active_llms()
@@ -917,10 +963,13 @@ class ChatPanel(QWidget):
         dialog.exec()
 
     def add_llm_to_bar(self, name, url):
-        if any(llm["name"] == name for llm in self.active_llms):
-            return
-
-        new_llm = {"id": str(uuid.uuid4()), "name": name, "url": url}
+        unique_name = self._unique_llm_name(name)
+        new_llm = {
+            "id": str(uuid.uuid4()),
+            "name": unique_name,
+            "url": url,
+            "profile_id": str(uuid.uuid4()),   # fresh, isolated, logged-out session
+        }
         self.play_add_llm_animation(new_llm)
 
     def widget_rect_in_panel(self, widget):
