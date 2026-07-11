@@ -3,7 +3,7 @@ import json
 import uuid
 import keyboard
 import re
-from PySide6.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QFileDialog, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel,
                                QFrame, QRubberBand, QGraphicsOpacityEffect, QSizePolicy,
                                QScrollArea, QDialog, QLineEdit, QListWidget, QListWidgetItem,
                                QStackedWidget, QMenu, QInputDialog)
@@ -478,6 +478,8 @@ class ChatPanel(QWidget):
         # Accept-Language header is a common bot detection signal.
         self.profile.setHttpAcceptLanguage("en-US,en;q=0.9")
 
+        self.profile.downloadRequested.connect(self.handle_download_requested)
+
         for llm in self.active_llms:
             self.add_browser_to_stack(llm["id"], llm["url"])
 
@@ -485,6 +487,20 @@ class ChatPanel(QWidget):
             self.browser_stack.setCurrentWidget(self.browsers[self.current_provider_id])
         elif self.active_llms:
             self.browser_stack.setCurrentWidget(self.browsers[self.active_llms[0]["id"]])
+
+    def handle_download_requested(self, download):
+        downloads_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation)
+        suggested_name = download.downloadFileName() or "download"
+        suggested_path = os.path.join(downloads_dir, suggested_name)
+
+        path, _ = QFileDialog.getSaveFileName(self, "Save File", suggested_path)
+        if not path:
+            download.cancel()
+            return
+
+        download.setDownloadDirectory(os.path.dirname(path))
+        download.setDownloadFileName(os.path.basename(path))
+        download.accept()        
 
     def add_browser_to_stack(self, llm_id, url):
         browser = QWebEngineView()
