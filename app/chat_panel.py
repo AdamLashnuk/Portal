@@ -249,6 +249,11 @@ class ChatPanel(QWidget):
 
             if panel_was_visible:
                 self.show()
+                # Changing window flags recreates the native window. Explicitly
+                # lower it after re-showing so unpinning takes effect in the
+                # Windows z-order immediately, without needing a click/focus.
+                if is_pinned:
+                    self.lower()
 
             if self.bubble:
                 bubble_was_visible = self.bubble.isVisible()
@@ -259,6 +264,8 @@ class ChatPanel(QWidget):
 
                 if bubble_was_visible:
                     self.bubble.show()
+                    if is_pinned:
+                        self.bubble.lower()
 
     def cycle_next_llm(self):
         if not self.active_llms: return
