@@ -19,6 +19,62 @@ from app.utils import get_asset_path
 from app.multitask.sender import MultitaskSender
 
 
+class PortalWebEngineView(QWebEngineView):
+    """QWebEngineView that supports real JavaScript popup windows.
+
+    OAuth providers (including Claude's Google sign-in flow) commonly launch
+    authentication with window.open()/target=_blank. A plain QWebEngineView
+    has nowhere to put that new window, so the click can appear to do nothing.
+
+    The popup deliberately uses the SAME QWebEngineProfile as its opener so
+    cookies/session state created during sign-in are visible to the original
+    Claude tab when the popup closes.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._popup_windows = []
+
+    def createWindow(self, window_type):
+        popup = PortalWebEngineView()
+        popup.setAttribute(Qt.WA_DeleteOnClose, True)
+        popup.setWindowTitle("Portal Sign In")
+        popup.resize(560, 760)
+
+        # Critical: keep OAuth cookies/session in the same profile as the
+        # browser that opened this popup.
+        opener_page = self.page()
+        if opener_page is not None:
+            popup_page = QWebEnginePage(opener_page.profile(), popup)
+            popup.setPage(popup_page)
+
+        # Match the capabilities enabled on Portal's normal embedded tabs.
+        popup_settings = popup.settings()
+        popup_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        popup_settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
+        popup_settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+        popup_settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+        popup_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
+        popup_settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
+
+        # Keep a Python reference alive until the OAuth popup closes.
+        self._popup_windows.append(popup)
+
+        def forget_popup(*_):
+            try:
+                self._popup_windows.remove(popup)
+            except ValueError:
+                pass
+
+        popup.destroyed.connect(forget_popup)
+        popup.page().windowCloseRequested.connect(popup.close)
+
+        popup.show()
+        popup.raise_()
+        popup.activateWindow()
+        return popup
+
+
 class GlobalHotkeyBridge(QObject):
     trigger = Signal(str)
 
@@ -125,7 +181,7 @@ class ChatPanel(QWidget):
         self.multitask_active = False
         self.multitask_view = None
         self.multitask_browsers = {}
-        self.multitask_senders = {} 
+        self.multitask_senders = {}
         self.multitask_tab_button = None
         self.multitask_prompt_overlay = None
 
@@ -506,10 +562,10 @@ class ChatPanel(QWidget):
 
         download.setDownloadDirectory(os.path.dirname(path))
         download.setDownloadFileName(os.path.basename(path))
-        download.accept()        
+        download.accept()
 
     def add_browser_to_stack(self, llm_id, url):
-        browser = QWebEngineView()
+        browser = PortalWebEngineView()
 
         browser_policy = browser.sizePolicy()
         browser_policy.setHorizontalPolicy(QSizePolicy.Expanding)
@@ -1422,7 +1478,7 @@ class ChatPanel(QWidget):
             status.setStyleSheet("QLabel { color: #a5b4fc; font-size: 12px; background: transparent; }")
             card_layout.addWidget(status)
 
-            browser = QWebEngineView()
+            browser = PortalWebEngineView()
             browser.setMinimumWidth(360)
             browser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
