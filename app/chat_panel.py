@@ -209,7 +209,12 @@ class ChatPanel(QWidget):
         )
 
         self.setting_panel.color_changed.connect(self.update_content_area_color)
-        self.setting_panel.clear_data_requested.connect(self.clear_browsing_data)
+        self.setting_panel.clear_current_data_requested.connect(
+            self.clear_current_browsing_data
+        )
+        self.setting_panel.clear_all_data_requested.connect(
+            self.clear_all_browsing_data
+        )
 
         self.setting_panel.keybinds_updated.connect(self.apply_keybinds)
         self.apply_keybinds(self.setting_panel.current_keybinds)
@@ -616,6 +621,15 @@ class ChatPanel(QWidget):
         idx = self._find_llm_index(llm_id)
         llm_entry = self.active_llms[idx] if idx != -1 else {}
         profile = self.get_profile_for_entry(llm_entry)
+        self.set_browser_profile(browser, profile)
+
+        browser.setUrl(QUrl(url))
+
+        self.browsers[llm_id] = browser
+        self.browser_stack.addWidget(browser)
+
+    def set_browser_profile(self, browser, profile):
+        """Give a browser a page backed by the requested session profile."""
         page = QWebEnginePage(profile, browser)
 
         def grant_feature_permission(origin, feature):
@@ -625,10 +639,6 @@ class ChatPanel(QWidget):
 
         page.featurePermissionRequested.connect(grant_feature_permission)
         browser.setPage(page)
-        browser.setUrl(QUrl(url))
-
-        self.browsers[llm_id] = browser
-        self.browser_stack.addWidget(browser)
 
     def get_profile_for_entry(self, llm_entry):
         profile_id = (llm_entry or {}).get("profile_id")
@@ -1710,22 +1720,117 @@ class ChatPanel(QWidget):
             f"QFrame#mainContainer {{ background-color: {new_color}; border: 1px solid rgba(255, 255, 255, 20); border-radius: 24px; }}")
         self.save_setting("resize_color", new_color)
 
-    def clear_browsing_data(self):
-        self.profile.cookieStore().deleteAllCookies()
-        self.profile.clearHttpCache()
-
-        js_clear = "window.localStorage.clear(); window.sessionStorage.clear();"
-
-        for browser in self.browsers.values():
-            browser.page().runJavaScript(js_clear, lambda res, b=browser: b.reload())
-
-        if hasattr(self, "multitask_browsers"):
-            for browser in self.multitask_browsers.values():
-                browser.page().runJavaScript(js_clear, lambda res, b=browser: b.reload())
-
+    def return_to_browser_after_clearing_data(self):
         self.show_browser()
         self.setting_panel.appearance_btn.setChecked(True)
         self.setting_panel.content_stack.setCurrentIndex(0)
+
+    def clear_profile_browsing_data(self, profile, browsers):
+        """Clear one profile, then reload its tabs after Qt finishes."""
+        browsers = list(browsers)
+        clear_storage = "window.localStorage.clear(); window.sessionStorage.clear();"
+        pending_storage_callbacks = len(browsers)
+        cleanup_started = False
+
+        def start_profile_cleanup():
+            nonlocal cleanup_started
+            if cleanup_started:
+                return
+            cleanup_started = True
+            reload_scheduled = False
+
+            def schedule_reload():
+                nonlocal reload_scheduled
+                if reload_scheduled:
+                    return
+                reload_scheduled = True
+                try:
+                    profile.clearHttpCacheCompleted.disconnect(schedule_reload)
+                except (RuntimeError, TypeError):
+                    pass
+
+                # Cookie deletion is asynchronous too. The short delay after
+                # cache completion lets both WebEngine cleanup requests settle.
+                def reload_browsers():
+                    for browser in browsers:
+                        try:
+                            browser.reload()
+                        except RuntimeError:
+                            # The tab may have been closed during cleanup.
+                            pass
+
+                QTimer.singleShot(250, reload_browsers)
+
+            profile.clearHttpCacheCompleted.connect(schedule_reload)
+            profile.cookieStore().deleteAllCookies()
+            profile.clearHttpCache()
+
+            # Keep automatic reloading reliable even if WebEngine does not
+            # emit its cache-completed signal for an already-empty cache.
+            QTimer.singleShot(2000, schedule_reload)
+
+        def storage_cleared(_result=None):
+            nonlocal pending_storage_callbacks
+            pending_storage_callbacks -= 1
+            if pending_storage_callbacks <= 0:
+                start_profile_cleanup()
+
+        if browsers:
+            for browser in browsers:
+                browser.page().runJavaScript(clear_storage, storage_cleared)
+
+            # A stalled provider page must not prevent cookies from clearing.
+            QTimer.singleShot(1000, start_profile_cleanup)
+        else:
+            start_profile_cleanup()
+
+    def clear_current_browsing_data(self):
+        browser = self.current_browser()
+        index = self._find_llm_index(self.current_provider_id)
+        if browser is None or index == -1:
+            return
+
+        entry = self.active_llms[index]
+        profile_id = entry.get("profile_id")
+        profile_users = sum(
+            1 for llm in self.active_llms
+            if llm.get("profile_id") == profile_id
+        )
+
+        if profile_id and profile_users == 1:
+            # This profile belongs only to the selected tab, so it is safe to
+            # remove the whole session without affecting any other provider.
+            profile = browser.page().profile()
+            self.clear_profile_browsing_data(profile, [browser])
+        else:
+            # Legacy tabs and duplicated tabs can share a profile. Move only
+            # the selected tab to a brand-new profile so the others stay
+            # signed in while this tab starts with a clean session.
+            new_profile_id = str(uuid.uuid4())
+            entry["profile_id"] = new_profile_id
+            self.save_setting("active_llms", json.dumps(self.active_llms))
+
+            new_profile = self.get_profile_for_entry(entry)
+            self.set_browser_profile(browser, new_profile)
+            browser.setUrl(QUrl(entry["url"]))
+
+        self.return_to_browser_after_clearing_data()
+
+    def clear_all_browsing_data(self):
+        browsers = list(self.browsers.values())
+        browsers.extend(self.multitask_browsers.values())
+        browsers_by_profile = {
+            profile: []
+            for profile in [self.profile, *self.extra_profiles.values()]
+        }
+        for browser in browsers:
+            profile = browser.page().profile()
+            browsers_by_profile.setdefault(profile, []).append(browser)
+
+        for profile, profile_browsers in browsers_by_profile.items():
+            self.clear_profile_browsing_data(profile, profile_browsers)
+
+        self.return_to_browser_after_clearing_data()
 
     def hideEvent(self, event):
         self.save_setting("window_size", self.size())

@@ -196,7 +196,8 @@ class ShortcutKeySequenceEdit(QKeySequenceEdit):
 class SettingPanel(QWidget):
     color_changed = Signal(str)
     opacity_changed = Signal(int)
-    clear_data_requested = Signal()
+    clear_current_data_requested = Signal()
+    clear_all_data_requested = Signal()
     keybinds_updated = Signal(dict)  # Tells ChatPanel to reload its shortcuts
 
     def __init__(self):
@@ -716,18 +717,31 @@ class SettingPanel(QWidget):
         priv_card_layout.addWidget(danger_title)
 
         danger_desc = QLabel(
-            "This will instantly log you out of all AI providers, clear your active session cookies, and wipe the widget's internal cache. Use this to protect your privacy or if a website is stuck in an endless login loop.")
+            "Reset only the selected tab's isolated session, or clear every "
+            "AI provider session in Portal. Affected tabs will be logged out "
+            "and restarted with clean browsing data."
+        )
         danger_desc.setProperty("class", "cardText")
         danger_desc.setWordWrap(True)
         priv_card_layout.addWidget(danger_desc)
 
-        self.btn_clear_data = QPushButton("Clear All Data && Cookies")
-        self.btn_clear_data.setProperty("class", "dangerButton")
-        self.btn_clear_data.setCursor(Qt.PointingHandCursor)
-        self.btn_clear_data.clicked.connect(lambda: self.clear_data_requested.emit())
+        self.btn_clear_current_data = QPushButton("Clear Current Tab")
+        self.btn_clear_current_data.setProperty("class", "dangerButton")
+        self.btn_clear_current_data.setCursor(Qt.PointingHandCursor)
+        self.btn_clear_current_data.clicked.connect(
+            lambda: self.clear_current_data_requested.emit()
+        )
+
+        self.btn_clear_all_data = QPushButton("Clear All Providers")
+        self.btn_clear_all_data.setProperty("class", "dangerButton")
+        self.btn_clear_all_data.setCursor(Qt.PointingHandCursor)
+        self.btn_clear_all_data.clicked.connect(
+            lambda: self.clear_all_data_requested.emit()
+        )
 
         btn_layout = QHBoxLayout()
-        btn_layout.addWidget(self.btn_clear_data)
+        btn_layout.addWidget(self.btn_clear_current_data)
+        btn_layout.addWidget(self.btn_clear_all_data)
         btn_layout.addStretch()
         priv_card_layout.addLayout(btn_layout)
         priv_layout.addWidget(priv_card)
