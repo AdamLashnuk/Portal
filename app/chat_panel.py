@@ -20,7 +20,6 @@ from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngin
 from app.setting_panel import SettingPanel
 from app.tab_reorder import ReorderableTabButton, TabReorderController
 from app.utils import get_asset_path
-from app.multitask.sender import MultitaskSender
 
 
 class PortalWebEngineView(QWebEngineView):
@@ -181,13 +180,6 @@ class ChatPanel(QWidget):
         self.bubble = bubble
         self.drag_position = None
         self.tab_animations = []
-
-        self.multitask_active = False
-        self.multitask_view = None
-        self.multitask_browsers = {}
-        self.multitask_senders = {}
-        self.multitask_tab_button = None
-        self.multitask_prompt_overlay = None
 
         self.resize_margin = 8
         self.resize_direction = None
@@ -497,20 +489,6 @@ class ChatPanel(QWidget):
                 background-color: #333333;
             }
 
-            QPushButton#multitaskButton {
-                background-color: rgba(99, 102, 241, 0.15);
-                border: 1px solid rgba(129, 140, 248, 0.45);
-                color: #ececec;
-                border-radius: 10px;
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-
-            QPushButton#multitaskButton:hover {
-                background-color: rgba(99, 102, 241, 0.26);
-                border: 1px solid rgba(165, 180, 252, 0.65);
-            }
         """)
 
     def create_widgets(self):
@@ -564,11 +542,6 @@ class ChatPanel(QWidget):
         self.settings_button.setObjectName("settingsButton")
         self.settings_button.setFixedSize(32, 32)
         self.settings_button.clicked.connect(self.open_settings)
-
-        self.multitask_button = QPushButton("Multitask")
-        self.multitask_button.setObjectName("multitaskButton")
-        self.multitask_button.setFixedHeight(32)
-        self.multitask_button.clicked.connect(self.open_multitask_prompt)
 
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         icon_path = get_asset_path(os.path.join("assets", "gearsettingsgrey.png"))
@@ -779,29 +752,6 @@ class ChatPanel(QWidget):
             self.llm_buttons[llm["id"]] = btn
 
             self.llm_layout.insertWidget(i, btn, alignment=Qt.AlignVCenter)
-
-        if self.multitask_active:
-            self.multitask_tab_button = QPushButton("Multitask")
-            self.multitask_tab_button.setStyleSheet("""
-                QPushButton {
-                    background-color: rgba(99, 102, 241, 0.20);
-                    color: #ffffff;
-                    border: 1px solid rgba(129, 140, 248, 0.65);
-                    border-radius: 10px;
-                    padding: 8px 14px;
-                    font-size: 14px;
-                    font-weight: 600;
-                }
-                QPushButton:hover {
-                    background-color: rgba(99, 102, 241, 0.32);
-                }
-            """)
-            self.multitask_tab_button.clicked.connect(self.show_multitask_tab)
-            self.multitask_tab_button.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.multitask_tab_button.customContextMenuRequested.connect(
-                lambda pos, button=self.multitask_tab_button: self.show_multitask_context_menu(button)
-            )
-            self.llm_layout.insertWidget(len(self.active_llms), self.multitask_tab_button, alignment=Qt.AlignVCenter)
 
         self.llm_layout.addStretch()
 
@@ -1414,317 +1364,6 @@ class ChatPanel(QWidget):
         self.track_animation(group)
         group.start()
 
-    def open_multitask_prompt(self):
-        if self.multitask_prompt_overlay:
-            self.multitask_prompt_overlay.deleteLater()
-            self.multitask_prompt_overlay = None
-            return
-
-        button_rect = self.widget_rect_in_panel(self.multitask_button)
-        start_rect = QRect(
-            button_rect.center().x() - 20,
-            button_rect.center().y() - 16,
-            40,
-            32
-        )
-
-        target_w = min(650, max(500, self.width() - 100))
-        target_h = 155
-
-        target_rect = QRect(
-            (self.width() - target_w) // 2,
-            72,
-            target_w,
-            target_h
-        )
-
-        overlay = QFrame(self)
-        overlay.setObjectName("multitaskPromptOverlay")
-        overlay.setGeometry(start_rect)
-        overlay.setStyleSheet("""
-            QFrame#multitaskPromptOverlay {
-                background-color: rgba(24, 24, 28, 245);
-                border: 2px solid rgba(129, 140, 248, 180);
-                border-radius: 18px;
-            }
-            QLabel {
-                background: transparent;
-                color: #ffffff;
-                font-size: 15px;
-                font-weight: 600;
-            }
-            QLineEdit {
-                background-color: #151515;
-                border: 1px solid #333333;
-                border-radius: 10px;
-                color: white;
-                padding: 9px 12px;
-                font-size: 14px;
-                font-family: "Segoe UI";
-            }
-        """)
-
-        overlay_layout = QVBoxLayout(overlay)
-        overlay_layout.setContentsMargins(18, 14, 18, 14)
-        overlay_layout.setSpacing(10)
-
-        title = QLabel("Ask every AI")
-
-        warning = QLabel(
-            "PS: Make sure you're logged in to each AI. "
-            "Providers that aren't signed in may not receive your prompt."
-        )
-
-        warning.setWordWrap(True)
-
-        warning.setStyleSheet("""
-            QLabel {
-                color: #b4b4b4;
-                font-size: 11px;
-                background: transparent;
-            }
-        """)
-        input_box = QLineEdit()
-        input_box.setPlaceholderText("Type your question and press Enter...")
-
-        overlay_layout.addWidget(title)
-        overlay_layout.addWidget(warning)
-        overlay_layout.addWidget(input_box)
-
-        overlay.show()
-        overlay.raise_()
-        self.multitask_prompt_overlay = overlay
-
-        grow = QPropertyAnimation(overlay, b"geometry")
-        grow.setDuration(260)
-        grow.setStartValue(start_rect)
-        grow.setEndValue(target_rect)
-        grow.setEasingCurve(QEasingCurve.OutCubic)
-
-        fade = QGraphicsOpacityEffect(overlay)
-        overlay.setGraphicsEffect(fade)
-        fade_anim = QPropertyAnimation(fade, b"opacity")
-        fade_anim.setDuration(220)
-        fade_anim.setStartValue(0.0)
-        fade_anim.setEndValue(1.0)
-        fade_anim.setEasingCurve(QEasingCurve.OutCubic)
-
-        group = QParallelAnimationGroup(self)
-        group.addAnimation(grow)
-        group.addAnimation(fade_anim)
-
-        def focus_input():
-            input_box.setFocus()
-
-        group.finished.connect(focus_input)
-        self.track_animation(group)
-        group.start()
-
-        input_box.returnPressed.connect(lambda: self.submit_multitask_prompt(input_box.text().strip(), overlay))
-
-    def submit_multitask_prompt(self, prompt, overlay):
-        if not prompt:
-            return
-
-        start_rect = overlay.geometry()
-        end_rect = QRect(start_rect.center().x(), start_rect.center().y(), 0, 0)
-
-        shrink = QPropertyAnimation(overlay, b"geometry")
-        shrink.setDuration(180)
-        shrink.setStartValue(start_rect)
-        shrink.setEndValue(end_rect)
-        shrink.setEasingCurve(QEasingCurve.InCubic)
-
-        effect = overlay.graphicsEffect()
-        fade = QPropertyAnimation(effect, b"opacity")
-        fade.setDuration(160)
-        fade.setStartValue(1.0)
-        fade.setEndValue(0.0)
-
-        group = QParallelAnimationGroup(self)
-        group.addAnimation(shrink)
-        group.addAnimation(fade)
-
-        def finish():
-            overlay.deleteLater()
-            self.multitask_prompt_overlay = None
-            self.open_multitask_tab(prompt)
-
-        group.finished.connect(finish)
-        self.track_animation(group)
-        group.start()
-
-    def open_multitask_tab(self, prompt):
-        if self.multitask_active and self.multitask_view:
-            self.show_multitask_tab()
-            self.send_prompt_to_existing_multitask(prompt)
-            return
-
-        self.multitask_active = True
-        self.build_multitask_view(prompt)
-        self.render_active_llms()
-        self.show_multitask_tab()
-
-    def send_prompt_to_existing_multitask(self, prompt):
-        if not self.multitask_browsers:
-            return
-
-        for llm in self.active_llms:
-            browser = self.multitask_browsers.get(llm["id"])
-            if browser:
-                self.try_send_prompt_to_browser(browser, prompt)
-
-    def show_multitask_tab(self):
-        if self.multitask_view:
-            self.content_stack.setCurrentWidget(self.multitask_view)
-
-    def show_multitask_context_menu(self, button):
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu { background-color: #1f1f1f; border: 1px solid #333333; border-radius: 8px; padding: 4px; color: #ececec; }
-            QMenu::item { padding: 6px 16px; border-radius: 4px; }
-            QMenu::item:selected { background-color: #333333; }
-        """)
-        delete_action = menu.addAction("Delete Multitask")
-        chosen = menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
-        if chosen == delete_action:
-            self.delete_multitask_tab()
-
-    def delete_multitask_tab(self):
-        self.multitask_active = False
-
-        if self.multitask_view:
-            if self.content_stack.currentWidget() is self.multitask_view:
-                self.content_stack.setCurrentWidget(self.browser_stack)
-            self.content_stack.removeWidget(self.multitask_view)
-            self.multitask_view.deleteLater()
-            self.multitask_view = None
-
-        for browser in self.multitask_browsers.values():
-            browser.deleteLater()
-        self.multitask_browsers.clear()
-        self.multitask_senders.clear()
-        self.multitask_tab_button = None
-        self.render_active_llms()
-
-    def build_multitask_view(self, prompt):
-        if self.multitask_view:
-            self.content_stack.removeWidget(self.multitask_view)
-            self.multitask_view.deleteLater()
-            self.multitask_view = None
-            self.multitask_browsers.clear()
-
-        wrapper = QWidget()
-        wrapper.setStyleSheet("""
-            QWidget { background-color: transparent; }
-            QLabel#multitaskTitle { color: #ffffff; font-size: 18px; font-weight: 700; }
-            QLabel#multitaskQuestion { color: #b4b4b4; font-size: 13px; }
-            QLabel#multitaskProvider { color: #ececec; font-size: 13px; font-weight: 600; padding: 3px 0px; }
-            QFrame#multitaskCard { background-color: rgba(20, 20, 20, 150); border: 1px solid rgba(255, 255, 255, 20); border-radius: 14px; }
-        """)
-
-        outer = QVBoxLayout(wrapper)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(10)
-
-        title = QLabel("Multitask")
-        title.setObjectName("multitaskTitle")
-        question = QLabel(prompt)
-        question.setObjectName("multitaskQuestion")
-        question.setWordWrap(True)
-        outer.addWidget(title)
-        outer.addWidget(question)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-
-        row_holder = QWidget()
-        row = QHBoxLayout(row_holder)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(12)
-
-        for llm in self.active_llms:
-            card = QFrame()
-            card.setObjectName("multitaskCard")
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(10, 10, 10, 10)
-            card_layout.setSpacing(8)
-
-            label = QLabel(llm["name"])
-            label.setObjectName("multitaskProvider")
-            card_layout.addWidget(label)
-
-            status = QLabel("Loading...")
-            status.setStyleSheet("QLabel { color: #a5b4fc; font-size: 12px; background: transparent; }")
-            card_layout.addWidget(status)
-
-            browser = PortalWebEngineView()
-            browser.setMinimumWidth(360)
-            browser.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-            settings = browser.settings()
-            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptCanPaste, True)
-
-            page = QWebEnginePage(self.profile, browser)
-
-            def grant_feature_permission(origin, feature, p=page):
-                p.setFeaturePermission(origin, feature, QWebEnginePage.PermissionPolicy.PermissionGrantedByUser)
-
-            page.featurePermissionRequested.connect(grant_feature_permission)
-            browser.setPage(page)
-
-            browser.setProperty("multitask_sent", False)
-            browser.setProperty("multitask_started", False)
-            browser.setProperty("multitask_provider", llm["name"])
-            browser.setProperty("multitask_id", llm["id"])
-
-            self.multitask_browsers[llm["id"]] = browser
-            card_layout.addWidget(browser, 1)
-            row.addWidget(card)
-
-            def handle_loaded(ok, b=browser, q=prompt, st=status, provider=llm["name"]):
-                if not ok:
-                    st.setText("Page failed to load")
-                    st.setStyleSheet("QLabel { color: #fca5a5; font-size: 12px; background: transparent; }")
-                    return
-                if b.property("multitask_started"):
-                    return
-                b.setProperty("multitask_started", True)
-                sender = MultitaskSender(b, provider_name=provider, status_label=st, parent=self)
-                self.multitask_senders[b.property("multitask_id")] = sender
-                QTimer.singleShot(3500, lambda s=sender, qq=q: s.send(qq))
-
-            browser.loadFinished.connect(handle_loaded)
-            browser.setUrl(QUrl(llm["url"]))
-
-        row.addStretch()
-        scroll.setWidget(row_holder)
-        outer.addWidget(scroll, 1)
-
-        self.multitask_view = wrapper
-        self.content_stack.addWidget(wrapper)
-
-    def send_prompt_to_existing_multitask(self, prompt):
-        if not self.multitask_browsers:
-            return
-        for llm in self.active_llms:
-            browser = self.multitask_browsers.get(llm["id"])
-            if browser:
-                browser.setProperty("multitask_sent", False)
-                sender = self.multitask_senders.get(llm["id"])
-                if sender is None:
-                    sender = MultitaskSender(browser, provider_name=llm["name"], parent=self)
-                    self.multitask_senders[llm["id"]] = sender
-                sender.send(prompt)
-
     def create_layout(self):
         top_bar = QHBoxLayout()
         self.title_bar = QFrame()
@@ -1733,7 +1372,6 @@ class ChatPanel(QWidget):
         top_bar.setContentsMargins(18, 4, 18, 4)
         top_bar.addWidget(self.scroll_area, alignment=Qt.AlignVCenter)
         top_bar.addStretch()
-        top_bar.addWidget(self.multitask_button, alignment=Qt.AlignVCenter)
         top_bar.addWidget(self.settings_button, alignment=Qt.AlignVCenter)
         top_bar.addWidget(self.close_button, alignment=Qt.AlignVCenter)
 
@@ -1848,9 +1486,8 @@ class ChatPanel(QWidget):
                 def reload_browsers():
                     for browser in browsers:
                         try:
-                            # Normal provider tabs explicitly use False until
-                            # first opened. Multitask browsers have no lazy-load
-                            # marker and should keep their existing reload behavior.
+                            # Provider tabs explicitly use False until first
+                            # opened; only reload the ones already loaded.
                             if browser.property("portal_loaded") is not False:
                                 browser.reload()
                         except RuntimeError:
@@ -1916,7 +1553,6 @@ class ChatPanel(QWidget):
 
     def clear_all_browsing_data(self):
         browsers = list(self.browsers.values())
-        browsers.extend(self.multitask_browsers.values())
         browsers_by_profile = {
             profile: []
             for profile in [self.profile, *self.extra_profiles.values()]
@@ -1994,8 +1630,6 @@ class ChatPanel(QWidget):
             self.resize_hidden_widget = self.browser_stack
         elif current is self.setting_panel:
             self.resize_hidden_widget = self.setting_panel
-        elif getattr(self, "multitask_view", None) is not None and current is self.multitask_view:
-            self.resize_hidden_widget = self.multitask_view
 
         if self.resize_hidden_widget:
             self.resize_hidden_widget.hide()
