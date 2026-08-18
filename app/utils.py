@@ -1,5 +1,6 @@
 import sys
 import os
+from PySide6.QtCore import QSettings
 
 if sys.platform == "win32":
     import winreg
@@ -8,6 +9,7 @@ else:
 
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_NAME = "PortalApp"
+STARTUP_INITIALIZED_KEY = "startup_preference_initialized"
 
 def get_asset_path(relative_path):
     """Get absolute path to an asset, handling both dev and PyInstaller environments."""
@@ -19,7 +21,7 @@ def get_asset_path(relative_path):
 
 def set_startup(enabled: bool = True):
     """Enables or disables launching the app on Windows startup."""
-    if not winreg: return
+    if not winreg: return False
         
     if getattr(sys, 'frozen', False):
         app_path = f'"{sys.executable}"'
@@ -39,8 +41,13 @@ def set_startup(enabled: bool = True):
             except FileNotFoundError:
                 pass
         winreg.CloseKey(key)
+        settings = QSettings("MyLLMWidget", "Portal")
+        settings.setValue(STARTUP_INITIALIZED_KEY, True)
+        settings.sync()
+        return True
     except Exception as e:
         print(f"Failed to update registry: {e}")
+        return False
 
 def check_startup_enabled() -> bool:
     """Checks if the app is currently set to run on startup."""
@@ -54,15 +61,17 @@ def check_startup_enabled() -> bool:
         return False
 
 def initialize_startup_default():
-    """Checks if it's the first run and enables startup by default."""
+    """Enable startup once, without overriding an existing user's choice."""
     if not winreg: return
-    try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_READ)
-        try:
-            winreg.QueryValueEx(key, APP_NAME)
-        except FileNotFoundError:
-            # Key doesn't exist yet, so write it to make it ON by default
-            set_startup(True)
-        winreg.CloseKey(key)
-    except Exception:
-        pass
+    settings = QSettings("MyLLMWidget", "Portal")
+    if settings.value(STARTUP_INITIALIZED_KEY, False, type=bool):
+        return
+
+    if settings.allKeys():
+        # Existing installations predate the marker. Preserve the registry as
+        # it is, because a missing Run entry may be an intentional Off choice.
+        settings.setValue(STARTUP_INITIALIZED_KEY, True)
+        settings.sync()
+        return
+
+    set_startup(True)

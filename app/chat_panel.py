@@ -3,6 +3,9 @@ import json
 import uuid
 import keyboard
 import re
+import shutil
+import threading
+import time
 from PySide6.QtWidgets import (QFileDialog, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QLabel,
                                QFrame, QRubberBand, QGraphicsOpacityEffect, QSizePolicy,
                                QScrollArea, QDialog, QLineEdit, QListWidget, QListWidgetItem,
@@ -222,6 +225,18 @@ class ChatPanel(QWidget):
         self.create_layout()
         self.apply_real_minimum_size()
 
+    def track_animation(self, animation):
+        """Keep an animation alive only until its final frame has run."""
+        self.tab_animations.append(animation)
+        animation.finished.connect(lambda anim=animation: self.release_animation(anim))
+
+    def release_animation(self, animation):
+        try:
+            self.tab_animations.remove(animation)
+        except ValueError:
+            return
+        animation.deleteLater()
+
     def apply_real_minimum_size(self):
         """
         Computes the true minimum window size from the fully-assembled layout,
@@ -375,6 +390,20 @@ class ChatPanel(QWidget):
                 {"id": str(uuid.uuid4()), "name": "Claude", "url": "https://claude.ai"},
                 {"id": str(uuid.uuid4()), "name": "Gemini", "url": "https://gemini.google.com"}
             ]
+            # The generated IDs are referenced by the saved current tab and
+            # tab order, so they must survive the first restart.
+            self.save_setting("active_llms", json.dumps(self.active_llms))
+
+        active_ids = [llm["id"] for llm in self.active_llms]
+        if self.current_provider_id not in active_ids:
+            if self.active_llms:
+                first_llm = self.active_llms[0]
+                self.current_provider = first_llm["name"]
+                self.current_provider_id = first_llm["id"]
+            else:
+                self.current_provider_id = None
+            self.save_setting("current_provider", self.current_provider)
+            self.save_setting("current_provider_id", self.current_provider_id)
 
         saved_tab_order = self.settings.value("provider_tab_order")
         try:
@@ -382,7 +411,6 @@ class ChatPanel(QWidget):
         except (TypeError, json.JSONDecodeError):
             requested_order = []
 
-        active_ids = [llm["id"] for llm in self.active_llms]
         self.provider_tab_order = [
             llm_id for llm_id in requested_order if llm_id in active_ids
         ]
@@ -559,7 +587,11 @@ class ChatPanel(QWidget):
         self.profile = self.create_browser_profile("llm_profile", storage_path)
 
         for llm in self.active_llms:
-            self.add_browser_to_stack(llm["id"], llm["url"])
+            self.add_browser_to_stack(
+                llm["id"],
+                llm["url"],
+                load_immediately=llm["id"] == self.current_provider_id,
+            )
 
         if self.current_provider_id and self.current_provider_id in self.browsers:
             self.browser_stack.setCurrentWidget(self.browsers[self.current_provider_id])
@@ -586,6 +618,7 @@ class ChatPanel(QWidget):
 
         profile = QWebEngineProfile(profile_name, self.browser_stack)
         profile.setPersistentStoragePath(storage_path)
+        profile.setCachePath(os.path.join(storage_path, "cache"))
         profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
 
         # Hardening: Set a proper Accept-Language header. A missing or default
@@ -597,7 +630,7 @@ class ChatPanel(QWidget):
         profile.downloadRequested.connect(self.handle_download_requested)
         return profile
 
-    def add_browser_to_stack(self, llm_id, url):
+    def add_browser_to_stack(self, llm_id, url, load_immediately=False):
         browser = PortalWebEngineView()
 
         browser_policy = browser.sizePolicy()
@@ -623,10 +656,23 @@ class ChatPanel(QWidget):
         profile = self.get_profile_for_entry(llm_entry)
         self.set_browser_profile(browser, profile)
 
-        browser.setUrl(QUrl(url))
+        browser.setProperty("portal_url", url)
+        browser.setProperty("portal_loaded", False)
+        if load_immediately:
+            self.ensure_browser_loaded(browser, url)
 
         self.browsers[llm_id] = browser
         self.browser_stack.addWidget(browser)
+
+    @staticmethod
+    def ensure_browser_loaded(browser, url=None):
+        """Load a normal provider tab once, when the user first selects it."""
+        if browser.property("portal_loaded"):
+            return
+        target_url = url or browser.property("portal_url")
+        if target_url:
+            browser.setProperty("portal_loaded", True)
+            browser.setUrl(QUrl(target_url))
 
     def set_browser_profile(self, browser, profile):
         """Give a browser a page backed by the requested session profile."""
@@ -646,13 +692,53 @@ class ChatPanel(QWidget):
             return self.profile
 
         if profile_id not in self.extra_profiles:
-            app_data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
-            storage_path = os.path.join(app_data_dir, "Portal", "session_data_isolated", profile_id)
+            storage_path = self.isolated_profile_storage_path(profile_id)
 
             profile = self.create_browser_profile(f"llm_isolated_{profile_id}", storage_path)
             self.extra_profiles[profile_id] = profile
 
         return self.extra_profiles[profile_id]
+
+    @staticmethod
+    def isolated_profile_storage_path(profile_id):
+        """Return a path guaranteed to stay inside Portal's isolated-data root."""
+        app_data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+        root = os.path.abspath(os.path.join(app_data_dir, "Portal", "session_data_isolated"))
+        storage_path = os.path.abspath(os.path.join(root, str(profile_id)))
+        if os.path.normcase(os.path.commonpath((root, storage_path))) != os.path.normcase(root):
+            raise ValueError("Invalid isolated browser profile ID")
+        return storage_path
+
+    @staticmethod
+    def remove_profile_storage(storage_path):
+        """Remove a released WebEngine profile without blocking Portal's UI."""
+        def remove_with_retries():
+            for attempt in range(6):
+                try:
+                    shutil.rmtree(storage_path)
+                    return
+                except FileNotFoundError:
+                    return
+                except OSError as error:
+                    if attempt == 5:
+                        print(f"Failed to remove browser profile data at {storage_path}: {error}")
+                        return
+                    time.sleep(0.25 * (attempt + 1))
+
+        threading.Thread(target=remove_with_retries, daemon=True).start()
+
+    def release_unused_profile(self, profile_id):
+        """Destroy and erase an isolated profile after its final tab is deleted."""
+        if not profile_id or any(llm.get("profile_id") == profile_id for llm in self.active_llms):
+            return
+        profile = self.extra_profiles.pop(profile_id, None)
+        if profile is None:
+            return
+        storage_path = self.isolated_profile_storage_path(profile_id)
+        profile.destroyed.connect(
+            lambda *_args, path=storage_path: self.remove_profile_storage(path)
+        )
+        profile.deleteLater()
 
     def current_browser(self):
         return self.browser_stack.currentWidget()
@@ -883,13 +969,17 @@ class ChatPanel(QWidget):
             return
 
         deleting_current = llm_id == self.current_provider_id
-        del self.active_llms[index]
+        deleted_entry = self.active_llms.pop(index)
         self.remove_from_provider_tab_order(llm_id)
 
         if llm_id in self.browsers:
             browser_to_delete = self.browsers.pop(llm_id)
             self.browser_stack.removeWidget(browser_to_delete)
+            for popup in list(browser_to_delete._popup_windows):
+                popup.close()
             browser_to_delete.deleteLater()
+
+        self.release_unused_profile(deleted_entry.get("profile_id"))
 
         if deleting_current:
             if self.active_llms:
@@ -897,7 +987,9 @@ class ChatPanel(QWidget):
                 self.current_provider = fallback["name"]
                 self.current_provider_id = fallback["id"]
                 if fallback["id"] in self.browsers:
-                    self.browser_stack.setCurrentWidget(self.browsers[fallback["id"]])
+                    fallback_browser = self.browsers[fallback["id"]]
+                    self.browser_stack.setCurrentWidget(fallback_browser)
+                    self.ensure_browser_loaded(fallback_browser, fallback["url"])
             else:
                 self.current_provider = "ChatGPT"
                 self.current_provider_id = None
@@ -1114,10 +1206,10 @@ class ChatPanel(QWidget):
         shrink_group.finished.connect(start_slide_after_pause)
         collapse_group.finished.connect(finish_delete)
 
-        self.tab_animations.append(pop_anim)
-        self.tab_animations.append(shrink_group)
-        self.tab_animations.append(particle_group)
-        self.tab_animations.append(collapse_group)
+        self.track_animation(pop_anim)
+        self.track_animation(shrink_group)
+        self.track_animation(particle_group)
+        self.track_animation(collapse_group)
 
         pop_anim.start()
 
@@ -1187,7 +1279,7 @@ class ChatPanel(QWidget):
             QTimer.singleShot(0, lambda: self.play_plus_to_tab_animation(old_plus_rect, new_llm["id"]))
 
         drop_group.finished.connect(after_drop)
-        self.tab_animations.append(drop_group)
+        self.track_animation(drop_group)
         drop_group.start()
 
     def play_water_splash(self, old_plus_rect, plus_center, new_llm):
@@ -1268,7 +1360,7 @@ class ChatPanel(QWidget):
                 widget.hide()  # <--- HIDE INSTEAD OF DELETE
 
         splash_group.finished.connect(cleanup_splash)
-        self.tab_animations.append(splash_group)
+        self.track_animation(splash_group)
         splash_group.start()
 
     def play_plus_to_tab_animation(self, old_plus_rect, new_llm_id):
@@ -1319,7 +1411,7 @@ class ChatPanel(QWidget):
             self.add_button.setEnabled(True)
 
         group.finished.connect(finish)
-        self.tab_animations.append(group)
+        self.track_animation(group)
         group.start()
 
     def open_multitask_prompt(self):
@@ -1425,7 +1517,7 @@ class ChatPanel(QWidget):
             input_box.setFocus()
 
         group.finished.connect(focus_input)
-        self.tab_animations.append(group)
+        self.track_animation(group)
         group.start()
 
         input_box.returnPressed.connect(lambda: self.submit_multitask_prompt(input_box.text().strip(), overlay))
@@ -1459,7 +1551,7 @@ class ChatPanel(QWidget):
             self.open_multitask_tab(prompt)
 
         group.finished.connect(finish)
-        self.tab_animations.append(group)
+        self.track_animation(group)
         group.start()
 
     def open_multitask_tab(self, prompt):
@@ -1701,7 +1793,9 @@ class ChatPanel(QWidget):
     def open_llm_url(self, name, url, llm_id=None):
         self.show_browser()
         if llm_id and llm_id in self.browsers:
-            self.browser_stack.setCurrentWidget(self.browsers[llm_id])
+            browser = self.browsers[llm_id]
+            self.browser_stack.setCurrentWidget(browser)
+            self.ensure_browser_loaded(browser, url)
 
             self.current_provider = name
             self.current_provider_id = llm_id
@@ -1754,7 +1848,11 @@ class ChatPanel(QWidget):
                 def reload_browsers():
                     for browser in browsers:
                         try:
-                            browser.reload()
+                            # Normal provider tabs explicitly use False until
+                            # first opened. Multitask browsers have no lazy-load
+                            # marker and should keep their existing reload behavior.
+                            if browser.property("portal_loaded") is not False:
+                                browser.reload()
                         except RuntimeError:
                             # The tab may have been closed during cleanup.
                             pass
