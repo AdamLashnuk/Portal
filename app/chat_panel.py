@@ -15,6 +15,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineSettings
 
 from app.setting_panel import SettingPanel
+from app.tab_reorder import ReorderableTabButton, TabReorderController
 from app.utils import get_asset_path
 from app.multitask.sender import MultitaskSender
 
@@ -324,16 +325,17 @@ class ChatPanel(QWidget):
                         self.bubble.lower()
 
     def cycle_next_llm(self):
-        if not self.active_llms: return
+        ordered_llms = self.ordered_provider_tabs()
+        if not ordered_llms: return
         current_idx = -1
-        for i, llm in enumerate(self.active_llms):
+        for i, llm in enumerate(ordered_llms):
             if llm["id"] == self.current_provider_id:
                 current_idx = i
                 break
-        if current_idx == -1 and self.active_llms: current_idx = 0
+        if current_idx == -1: current_idx = 0
 
-        next_idx = (current_idx + 1) % len(self.active_llms)
-        next_llm = self.active_llms[next_idx]
+        next_idx = (current_idx + 1) % len(ordered_llms)
+        next_llm = ordered_llms[next_idx]
 
         self.current_provider = next_llm["name"]
         self.current_provider_id = next_llm["id"]
@@ -368,6 +370,20 @@ class ChatPanel(QWidget):
                 {"id": str(uuid.uuid4()), "name": "Claude", "url": "https://claude.ai"},
                 {"id": str(uuid.uuid4()), "name": "Gemini", "url": "https://gemini.google.com"}
             ]
+
+        saved_tab_order = self.settings.value("provider_tab_order")
+        try:
+            requested_order = json.loads(saved_tab_order) if saved_tab_order else []
+        except (TypeError, json.JSONDecodeError):
+            requested_order = []
+
+        active_ids = [llm["id"] for llm in self.active_llms]
+        self.provider_tab_order = [
+            llm_id for llm_id in requested_order if llm_id in active_ids
+        ]
+        self.provider_tab_order.extend(
+            llm_id for llm_id in active_ids if llm_id not in self.provider_tab_order
+        )
 
         saved_size = self.settings.value("window_size")
         if saved_size:
@@ -489,6 +505,14 @@ class ChatPanel(QWidget):
         self.llm_layout = QHBoxLayout(self.llm_container)
         self.llm_layout.setContentsMargins(0, 0, 0, 0)
         self.llm_layout.setSpacing(10)
+
+        self.tab_reorder_controller = TabReorderController(
+            self.llm_container,
+            self.llm_layout,
+            self,
+        )
+        self.tab_reorder_controller.order_changed.connect(self.apply_provider_tab_order)
+        self.tab_reorder_controller.order_committed.connect(self.save_provider_tab_order)
 
         self.add_button = QPushButton("+")
         self.add_button.setObjectName("addButton")
@@ -624,6 +648,7 @@ class ChatPanel(QWidget):
         return self.browser_stack.currentWidget()
 
     def render_active_llms(self):
+        self.tab_reorder_controller.reset()
         self.llm_buttons = {}
 
         for i in reversed(range(self.llm_layout.count())):
@@ -638,12 +663,16 @@ class ChatPanel(QWidget):
         if self.llm_layout.indexOf(self.add_button) == -1:
             self.llm_layout.addWidget(self.add_button, alignment=Qt.AlignVCenter)
 
-        for i, llm in enumerate(self.active_llms):
-            btn = QPushButton(llm["name"])
+        ordered_llms = self.ordered_provider_tabs()
+        for i, llm in enumerate(ordered_llms):
+            btn = ReorderableTabButton(llm["name"], llm["id"])
             btn.clicked.connect(
                 lambda checked=False, name=llm["name"], url=llm["url"], llm_id=llm["id"]:
                 self.open_llm_url(name, url, llm_id)
             )
+            btn.drag_started.connect(self.tab_reorder_controller.begin_drag)
+            btn.drag_moved.connect(self.tab_reorder_controller.move_drag)
+            btn.drag_finished.connect(self.tab_reorder_controller.finish_drag)
 
             btn.setContextMenuPolicy(Qt.CustomContextMenu)
             btn.customContextMenuRequested.connect(
@@ -682,6 +711,54 @@ class ChatPanel(QWidget):
 
         self.add_button.setEnabled(True)
         self.add_button.show()
+        self.tab_reorder_controller.set_tabs(
+            self.llm_buttons,
+            [llm["id"] for llm in ordered_llms],
+        )
+
+    def ordered_provider_tabs(self):
+        llms_by_id = {llm["id"]: llm for llm in self.active_llms}
+        ordered = [
+            llms_by_id[llm_id]
+            for llm_id in self.provider_tab_order
+            if llm_id in llms_by_id
+        ]
+        ordered_ids = {llm["id"] for llm in ordered}
+        ordered.extend(llm for llm in self.active_llms if llm["id"] not in ordered_ids)
+        return ordered
+
+    def apply_provider_tab_order(self, ordered_ids):
+        active_ids = {llm["id"] for llm in self.active_llms}
+        self.provider_tab_order = [
+            llm_id for llm_id in ordered_ids if llm_id in active_ids
+        ]
+        self.provider_tab_order.extend(
+            llm["id"] for llm in self.active_llms
+            if llm["id"] not in self.provider_tab_order
+        )
+
+    def save_provider_tab_order(self, ordered_ids):
+        self.apply_provider_tab_order(ordered_ids)
+        self.save_setting("provider_tab_order", json.dumps(self.provider_tab_order))
+
+    def add_to_provider_tab_order(self, llm_id, after_id=None):
+        current_order = [llm["id"] for llm in self.ordered_provider_tabs()]
+        if llm_id in current_order:
+            current_order.remove(llm_id)
+
+        if after_id in current_order:
+            current_order.insert(current_order.index(after_id) + 1, llm_id)
+        else:
+            current_order.append(llm_id)
+
+        self.provider_tab_order = current_order
+        self.save_setting("provider_tab_order", json.dumps(self.provider_tab_order))
+
+    def remove_from_provider_tab_order(self, llm_id):
+        self.provider_tab_order = [
+            tab_id for tab_id in self.provider_tab_order if tab_id != llm_id
+        ]
+        self.save_setting("provider_tab_order", json.dumps(self.provider_tab_order))
 
     def show_llm_context_menu(self, button, llm_id):
         menu = QMenu(self)
@@ -764,6 +841,7 @@ class ChatPanel(QWidget):
             "profile_id": original.get("profile_id"),  # None = shared main profile, or same isolated id
         }
         self.active_llms.insert(index + 1, copy_entry)
+        self.add_to_provider_tab_order(copy_entry["id"], after_id=llm_id)
 
         self.add_browser_to_stack(copy_entry["id"], copy_entry["url"])
 
@@ -796,6 +874,7 @@ class ChatPanel(QWidget):
 
         deleting_current = llm_id == self.current_provider_id
         del self.active_llms[index]
+        self.remove_from_provider_tab_order(llm_id)
 
         if llm_id in self.browsers:
             browser_to_delete = self.browsers.pop(llm_id)
@@ -1090,6 +1169,7 @@ class ChatPanel(QWidget):
         def after_drop():
             drop.hide()  # <--- HIDE INSTEAD OF DELETE
             self.active_llms.append(new_llm)
+            self.add_to_provider_tab_order(new_llm["id"])
             self.save_setting("active_llms", json.dumps(self.active_llms))
             self.render_active_llms()
 
@@ -1166,6 +1246,7 @@ class ChatPanel(QWidget):
 
         def start_tab_materialize():
             self.active_llms.append(new_llm)
+            self.add_to_provider_tab_order(new_llm["id"])
             self.save_setting("active_llms", json.dumps(self.active_llms))
             self.render_active_llms()
 
