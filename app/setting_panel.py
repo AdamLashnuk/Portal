@@ -2,9 +2,9 @@ import os
 import json
 import copy
 import sys as sys_module
-from PySide6.QtWidgets import (QComboBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget,
-                               QButtonGroup, QKeySequenceEdit, QSlider, QLayout, QSizePolicy)
-from PySide6.QtCore import Qt, Signal, QSettings, QRect, QSize, QPoint
+from PySide6.QtWidgets import (QApplication, QComboBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame, QStackedWidget,
+                               QButtonGroup, QKeySequenceEdit, QLineEdit, QSlider, QLayout, QSizePolicy)
+from PySide6.QtCore import Qt, QEvent, Signal, QSettings, QRect, QSize, QPoint
 from PySide6.QtGui import QPixmap, QColor, QImage, QKeySequence, QPainter, QBrush
 
 from app.utils import get_asset_path
@@ -103,6 +103,96 @@ class CustomSlider(QWidget):
             self.update()
 
 
+class ShortcutKeySequenceEdit(QKeySequenceEdit):
+    capture_started = Signal()
+    capture_cancelled = Signal()
+
+    def __init__(self, sequence, parent=None):
+        super().__init__(sequence, parent)
+        self._capturing = False
+        self._previous_sequence = QKeySequence(sequence)
+        self.setProperty("shortcutHovered", False)
+        self.setMouseTracking(True)
+
+        line_edit = self.findChild(QLineEdit)
+        if line_edit:
+            line_edit.setMouseTracking(True)
+            line_edit.installEventFilter(self)
+
+    def _set_hovered(self, hovered):
+        if self.property("shortcutHovered") == hovered:
+            return
+
+        self.setProperty("shortcutHovered", hovered)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _is_editor_widget(self, widget):
+        current = widget if isinstance(widget, QWidget) else None
+        while current:
+            if current is self:
+                return True
+            current = current.parentWidget()
+        return False
+
+    def _set_capture_placeholder(self, text):
+        line_edit = self.findChild(QLineEdit)
+        if line_edit:
+            line_edit.setPlaceholderText(text)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        if self._capturing:
+            return
+
+        self._capturing = True
+        self._previous_sequence = self.keySequence()
+
+        # Clear the visible value without saving an empty shortcut. The
+        # placeholder then tells the user exactly what to do next.
+        self.blockSignals(True)
+        self.clear()
+        self.blockSignals(False)
+
+        self._set_capture_placeholder("Press a shortcut...")
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
+        self.capture_started.emit()
+
+    def focusOutEvent(self, event):
+        if self._capturing and self.keySequence().isEmpty():
+            # A click away without entering keys should leave the saved
+            # shortcut untouched and restore what the user had before.
+            self.blockSignals(True)
+            self.setKeySequence(self._previous_sequence)
+            self.blockSignals(False)
+            self.capture_cancelled.emit()
+
+        self._capturing = False
+        app = QApplication.instance()
+        if app:
+            app.removeEventFilter(self)
+        self._set_capture_placeholder("")
+        super().focusOutEvent(event)
+
+    def eventFilter(self, watched, event):
+        if isinstance(watched, QLineEdit) and self._is_editor_widget(watched):
+            if event.type() == QEvent.Type.Enter:
+                self._set_hovered(True)
+            elif event.type() == QEvent.Type.Leave:
+                self._set_hovered(False)
+
+        if (
+            self._capturing
+            and event.type() == QEvent.Type.MouseButtonPress
+            and not self._is_editor_widget(watched)
+        ):
+            self.clearFocus()
+
+        return super().eventFilter(watched, event)
+
+
 class SettingPanel(QWidget):
     color_changed = Signal(str)
     opacity_changed = Signal(int)
@@ -149,7 +239,16 @@ class SettingPanel(QWidget):
             QPushButton.dangerButton:hover { background-color: rgba(220, 38, 38, 0.25); color: #fca5a5; }
 
             /* --- Keybinds UI Styling --- */
-            QKeySequenceEdit { background-color: #151515; border: 1px solid #333333; border-radius: 6px; color: #ffffff; padding: 6px 10px; }
+            QKeySequenceEdit { background-color: #242424; border: 1px solid transparent; border-radius: 14px; color: #ececec; padding: 6px 12px; }
+            QKeySequenceEdit QLineEdit { background-color: #242424; border: 1px solid #242424; border-radius: 12px; color: #ececec; padding: 0; }
+            QKeySequenceEdit QLineEdit::placeholder { color: #a3a3a3; }
+            QKeySequenceEdit:hover { background-color: #2a2a2a; border-color: #4a4a4a; }
+            QKeySequenceEdit:hover QLineEdit { background-color: #2a2a2a; border-color: #2a2a2a; border-radius: 12px; }
+            QKeySequenceEdit QLineEdit:hover { border-color: #4a4a4a; }
+            QKeySequenceEdit[shortcutHovered="true"] QLineEdit { background-color: #2a2a2a; border-color: #4a4a4a; }
+            QKeySequenceEdit:focus { background-color: #2a2a2a; border-color: #737373; }
+            QKeySequenceEdit:focus QLineEdit { background-color: #2a2a2a; border-color: #2a2a2a; border-radius: 12px; }
+            QKeySequenceEdit QLineEdit:focus { border-color: #737373; }
             QPushButton.scopeToggle { background-color: #242424; color: #b4b4b4; border: 1px solid #333333; border-radius: 6px; padding: 6px 0px; font-size: 13px; min-height: 18px; }
             QPushButton.scopeToggle:hover { background-color: #2a2a2a; color: #ececec; }
             QPushButton.scopeToggle:checked { color: #818cf8; border: 1px solid #6366f1; background-color: rgba(99, 102, 241, 0.1); }
@@ -221,6 +320,12 @@ class SettingPanel(QWidget):
         self.current_keybinds[action_id]["is_global"] = is_global
         self.save_all_keybinds()
 
+    @staticmethod
+    def size_keybind_editor(key_edit):
+        shortcut_text = key_edit.keySequence().toString() or "Set shortcut"
+        text_width = key_edit.fontMetrics().horizontalAdvance(shortcut_text)
+        key_edit.setFixedWidth(max(96, min(text_width + 32, 160)))
+
     def reset_keybinds(self):
         self.current_keybinds = copy.deepcopy(DEFAULT_KEYBINDS)
         for action_id, data in self.current_keybinds.items():
@@ -230,6 +335,7 @@ class SettingPanel(QWidget):
                 w["toggle"].blockSignals(True)
 
                 w["edit"].setKeySequence(QKeySequence(data["key"]))
+                self.size_keybind_editor(w["edit"])
                 w["toggle"].setChecked(data["is_global"])
                 w["toggle"].setText("Global" if data["is_global"] else "Local")
                 w["label"].setText(data["label"])  # <-- THIS NEW LINE UPDATES THE TEXT
@@ -316,10 +422,25 @@ class SettingPanel(QWidget):
         app_title.setProperty("class", "pageTitle")
         app_layout.addWidget(app_title)
 
+        appearance_card = QFrame()
+        appearance_card.setProperty("class", "settingCard")
+        appearance_card_layout = QVBoxLayout(appearance_card)
+        appearance_card_layout.setContentsMargins(20, 20, 20, 20)
+        appearance_card_layout.setSpacing(14)
+
+        def add_appearance_section(section):
+            if appearance_card_layout.count() > 0:
+                divider = QFrame()
+                divider.setFixedHeight(1)
+                divider.setProperty("class", "rowDivider")
+                appearance_card_layout.addWidget(divider)
+
+            appearance_card_layout.addWidget(section)
+
         color_card = QFrame()
-        color_card.setProperty("class", "settingCard")
+        color_card.setObjectName("transparentWidget")
         color_card_layout = QVBoxLayout(color_card)
-        color_card_layout.setContentsMargins(20, 20, 20, 20)
+        color_card_layout.setContentsMargins(0, 0, 0, 0)
         color_card_layout.setSpacing(15)
 
         resize_title = QLabel("Window Color")
@@ -429,12 +550,12 @@ class SettingPanel(QWidget):
             self.btn_grey.setChecked(True)
 
         color_card_layout.addLayout(color_layout)
-        app_layout.addWidget(color_card)
+        add_appearance_section(color_card)
 
         opacity_card = QFrame()
-        opacity_card.setProperty("class", "settingCard")
+        opacity_card.setObjectName("transparentWidget")
         opacity_card_layout = QVBoxLayout(opacity_card)
-        opacity_card_layout.setContentsMargins(20, 20, 20, 20)
+        opacity_card_layout.setContentsMargins(0, 0, 0, 0)
         opacity_card_layout.setSpacing(15)
 
         opacity_caption = QLabel("Background Opacity")
@@ -458,14 +579,14 @@ class SettingPanel(QWidget):
         opacity_row.addWidget(self.opacity_value_label)
         opacity_card_layout.addLayout(opacity_row)
 
-        app_layout.addWidget(opacity_card)
+        add_appearance_section(opacity_card)
 
         # --- WIDGET STARTUP POSITION CARD ---
         startup_pos_card = QFrame()
-        startup_pos_card.setProperty("class", "settingCard")
+        startup_pos_card.setObjectName("transparentWidget")
 
         startup_pos_layout = QVBoxLayout(startup_pos_card)
-        startup_pos_layout.setContentsMargins(20, 20, 20, 20)
+        startup_pos_layout.setContentsMargins(0, 0, 0, 0)
         startup_pos_layout.setSpacing(12)
 
         startup_pos_title = QLabel("Widget Startup Position")
@@ -535,15 +656,15 @@ class SettingPanel(QWidget):
 
         startup_pos_layout.addLayout(startup_buttons_layout)
 
-        app_layout.addWidget(startup_pos_card)
+        add_appearance_section(startup_pos_card)
 
         if sys_module.platform == "win32":
             from app.utils import set_startup, check_startup_enabled
 
             startup_card = QFrame()
-            startup_card.setProperty("class", "settingCard")
+            startup_card.setObjectName("transparentWidget")
             startup_card_layout = QVBoxLayout(startup_card)
-            startup_card_layout.setContentsMargins(20, 20, 20, 20)
+            startup_card_layout.setContentsMargins(0, 0, 0, 0)
             startup_card_layout.setSpacing(12)
 
             startup_title = QLabel("System")
@@ -562,8 +683,9 @@ class SettingPanel(QWidget):
             self.btn_startup.toggled.connect(lambda checked: set_startup(checked))
 
             startup_card_layout.addWidget(self.btn_startup)
-            app_layout.addWidget(startup_card)
+            add_appearance_section(startup_card)
 
+        app_layout.addWidget(appearance_card)
 
         self.btn_transparent.clicked.connect(lambda: self._on_color_selected(self.btn_transparent))
         self.btn_grey.clicked.connect(lambda: self._on_color_selected(self.btn_grey))
@@ -655,12 +777,21 @@ class SettingPanel(QWidget):
             toggle.setCursor(Qt.PointingHandCursor)
             toggle.setFixedWidth(65)
 
-            key_edit = QKeySequenceEdit(QKeySequence(data["key"]))
-            key_edit.setFixedWidth(180)
+            key_edit = ShortcutKeySequenceEdit(QKeySequence(data["key"]))
+            key_edit.setCursor(Qt.PointingHandCursor)
+            key_edit.setToolTip("Click to change shortcut")
+            self.size_keybind_editor(key_edit)
 
             toggle.toggled.connect(lambda checked, t=toggle, a=action_id: [t.setText("Global" if checked else "Local"),
                                                                            self.update_keybind_scope(a, checked)])
-            key_edit.keySequenceChanged.connect(lambda seq, a=action_id: self.update_keybind_seq(a, seq.toString()))
+
+            def handle_key_sequence_changed(seq, action=action_id, editor=key_edit):
+                self.update_keybind_seq(action, seq.toString())
+                self.size_keybind_editor(editor)
+
+            key_edit.keySequenceChanged.connect(handle_key_sequence_changed)
+            key_edit.capture_started.connect(lambda editor=key_edit: self.size_keybind_editor(editor))
+            key_edit.capture_cancelled.connect(lambda editor=key_edit: self.size_keybind_editor(editor))
 
             row_layout.addWidget(toggle)
             row_layout.addSpacing(10)

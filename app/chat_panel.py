@@ -549,22 +549,9 @@ class ChatPanel(QWidget):
         self.browser_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.browsers = {}
 
-        self.profile = QWebEngineProfile("llm_profile", self.browser_stack)
-
         app_data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
-
         storage_path = os.path.join(app_data_dir, "Portal", "session_data")
-
-        os.makedirs(storage_path, exist_ok=True)
-
-        self.profile.setPersistentStoragePath(storage_path)
-        self.profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
-
-        # Hardening: Set a proper Accept-Language header. A missing or default
-        # Accept-Language header is a common bot detection signal.
-        self.profile.setHttpAcceptLanguage("en-US,en;q=0.9")
-
-        self.profile.downloadRequested.connect(self.handle_download_requested)
+        self.profile = self.create_browser_profile("llm_profile", storage_path)
 
         for llm in self.active_llms:
             self.add_browser_to_stack(llm["id"], llm["url"])
@@ -587,6 +574,23 @@ class ChatPanel(QWidget):
         download.setDownloadDirectory(os.path.dirname(path))
         download.setDownloadFileName(os.path.basename(path))
         download.accept()
+
+    def create_browser_profile(self, profile_name, storage_path):
+        """Create a persistent profile with Portal's shared browser behavior."""
+        os.makedirs(storage_path, exist_ok=True)
+
+        profile = QWebEngineProfile(profile_name, self.browser_stack)
+        profile.setPersistentStoragePath(storage_path)
+        profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
+
+        # Hardening: Set a proper Accept-Language header. A missing or default
+        # Accept-Language header is a common bot detection signal.
+        profile.setHttpAcceptLanguage("en-US,en;q=0.9")
+
+        # Downloads belong to their profile. Connecting this here guarantees
+        # that shared and isolated LLM tabs all open the same Save File dialog.
+        profile.downloadRequested.connect(self.handle_download_requested)
+        return profile
 
     def add_browser_to_stack(self, llm_id, url):
         browser = PortalWebEngineView()
@@ -634,12 +638,8 @@ class ChatPanel(QWidget):
         if profile_id not in self.extra_profiles:
             app_data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
             storage_path = os.path.join(app_data_dir, "Portal", "session_data_isolated", profile_id)
-            os.makedirs(storage_path, exist_ok=True)
 
-            profile = QWebEngineProfile(f"llm_isolated_{profile_id}", self.browser_stack)
-            profile.setPersistentStoragePath(storage_path)
-            profile.setPersistentCookiesPolicy(QWebEngineProfile.ForcePersistentCookies)
-            profile.setHttpAcceptLanguage("en-US,en;q=0.9")
+            profile = self.create_browser_profile(f"llm_isolated_{profile_id}", storage_path)
             self.extra_profiles[profile_id] = profile
 
         return self.extra_profiles[profile_id]
