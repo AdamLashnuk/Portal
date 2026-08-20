@@ -1798,3 +1798,8 @@ class ChatPanel(QWidget):
             self.apply_pending_geometry()
             self.show_resize_heavy_content()
 
+        self.setCursor(QCursor(Qt.ArrowCursor))
+        event.accept()
+
+    def reset_to_browser(self):
+        self.content_stack.setCurrentWidget(self.browser_stack)
