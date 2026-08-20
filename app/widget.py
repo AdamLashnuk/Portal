@@ -25,39 +25,29 @@ class FloatingWidget(QWidget):
 
     def set_initial_position(self):
         settings = QSettings("MyLLMWidget", "ChatPanel")
-
-        saved_position = settings.value(
-            "widget_startup_position",
-            "center"
-        )
+        saved_position = settings.value("widget_startup_position", "center")
         screen = QGuiApplication.primaryScreen().availableGeometry()
-        app_width = self.width()
-        app_height = self.height()
-        margin = 20
-        y_offset = margin + 30  # Pushes it away from the corners
-        
-        # FIX: Match the exact lowercase keys saved by setting_panel.py
-        if saved_position == "top_right":
-            x = screen.width() - app_width  
-            y = y_offset                    
-        elif saved_position == "top_left":
-            x = 0                           
-            y = y_offset                    
-        elif saved_position == "bottom_right":
-            x = screen.width() - app_width  
-            y = screen.height() - app_height - y_offset 
-        elif saved_position == "bottom_left":
-            x = 0                           
-            y = screen.height() - app_height - y_offset 
-        elif saved_position == "center":
-            x = (screen.width() - app_width) // 2
-            y = (screen.height() - app_height) // 2
-        else:
-            # Fallback (Center)
-            x = (screen.width() - app_width) // 2
-            y = (screen.height() - app_height) // 2
-            
-        self.move(x, y)
+        self.move(self.position_for_mode(screen, saved_position))
+
+    def position_for_mode(self, screen, mode):
+        """Return the widget position for a saved startup/reset preference."""
+        y_offset = 50
+        left = screen.left()
+        right = screen.right() - self.width() + 1
+        top = screen.top() + y_offset
+        bottom = screen.bottom() - self.height() - y_offset + 1
+
+        positions = {
+            "top_right": QPoint(right, top),
+            "top_left": QPoint(left, top),
+            "bottom_right": QPoint(right, bottom),
+            "bottom_left": QPoint(left, bottom),
+            "center": QPoint(
+                screen.center().x() - (self.width() // 2),
+                screen.center().y() - (self.height() // 2),
+            ),
+        }
+        return positions.get(mode, positions["center"])
 
     def setup_window(self):
         self.setFixedSize(90, 90)
@@ -137,10 +127,9 @@ class FloatingWidget(QWidget):
 
     def reset_window_position(self):
         screen = self.target_screen_geometry()
-
-        bubble_x = screen.center().x() - (self.width() // 2)
-        bubble_y = screen.center().y() - (self.height() // 2)
-        self.move(bubble_x, bubble_y)
+        settings = QSettings("MyLLMWidget", "ChatPanel")
+        saved_position = settings.value("widget_startup_position", "center")
+        self.move(self.position_for_mode(screen, saved_position))
 
         panel_x, panel_y = self.calculate_chat_position()
         panel_x = max(screen.left(), min(panel_x, screen.left() + screen.width() - self.chat_panel.width()))
