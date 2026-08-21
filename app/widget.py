@@ -103,7 +103,7 @@ class FloatingWidget(QWidget):
         settings_action.triggered.connect(self.open_settings_directly)
         self.tray_menu.addAction(settings_action)
 
-        reset_position_action = QAction("Reset Window Position", self)
+        reset_position_action = QAction("Reset Widget Position", self)
         reset_position_action.triggered.connect(self.reset_window_position)
         self.tray_menu.addAction(reset_position_action)
 
