@@ -77,7 +77,7 @@ Portal solves this by providing:
 
 ---
 
-## 📦 Installation
+## 📦 Download Guide
 
 - Go to the [**Portal website**](https://useprtl.com/download) and click **Download for Windows**.
 <img width="1918" height="887" alt="1" src="https://github.com/user-attachments/assets/c0b804b7-0880-4441-bbcf-95e3de7b3dd6" />
