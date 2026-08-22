@@ -79,24 +79,24 @@ Portal solves this by providing:
 
 ## 📦 Installation
 
-### Clone the Repository
+- Go to the [**Portal website**](https://useprtl.com/download) and click **Download for Windows**.
+<img width="1918" height="887" alt="1" src="https://github.com/user-attachments/assets/c0b804b7-0880-4441-bbcf-95e3de7b3dd6" />
 
-```bash
-git clone https://github.com/yourusername/portal.git
-cd portal
-```
+- Once the download finishes, open the Portal-setup installer.
 
-### Install Dependencies
+- Press on **More info**.
+<img width="534" height="500" alt="2" src="https://github.com/user-attachments/assets/c622b442-1249-427d-bdb2-541e54c5796c" />
 
-```bash
-pip install -r requirements.txt
-```
+- Windows SmartScreen may show this warning because Portal is not currently code-signed.
 
-### Launch Portal
+- Click **Run anyway**.
+<img width="534" height="500" alt="3" src="https://github.com/user-attachments/assets/73a18466-de08-4796-8fa9-b1d2e13c3e6e" />
 
-```bash
-python main.py
-```
+- Follow the setup wizard to finish installing Portal.
+- Portal should now open and work normally.
+
+Enjoy your new LLM workspace!
+
 
 ---
 
